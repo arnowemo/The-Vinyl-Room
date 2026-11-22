@@ -336,7 +336,7 @@ private fun VinylRoomApp() {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     IconButton(onClick = { selected = (safeSelected - 1 + libraryAlbums.size) % libraryAlbums.size }) { Icon(Icons.Default.ChevronLeft, null, tint = amber, modifier = Modifier.size(30.dp)) }
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(if (currentTrackIndex >= 0) currentTrackName else album.artist, color = cream, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1)
+                        Text(if (currentTrackIndex >= 0 || bandcampDetailBusy) currentTrackName else album.artist, color = cream, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1)
                         if (playbackError.isNotBlank()) Text(playbackError, color = Color(0xFFFF9C85), fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
                         Text(if (currentTrackIndex >= 0) listOf(trackArtist, trackAlbum).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Fichier audio local" } else album.title, color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
                     }
@@ -394,19 +394,32 @@ private fun VinylRoomApp() {
                                     } else if (currentTrackIndex >= 0 && localTracks.isNotEmpty()) {
                                         startLocalTrack(currentTrackIndex)
                                     } else if (activeBandcampAlbum != null) {
+                                        playbackError = ""
+                                        currentTrackName = "Chargement de ${activeBandcampAlbum.title}…"
+                                        trackArtist = activeBandcampAlbum.artist
+                                        trackAlbum = activeBandcampAlbum.title
                                         bandcampDetailBusy = true
                                         scope.launch {
-                                            val result = withContext(Dispatchers.IO) { bandcampFetchAlbumSongs(bandcampUsername, bandcampPassword, activeBandcampAlbum.id) }
-                                            bandcampDetailBusy = false
-                                            if (result.isSuccess) {
-                                                val firstSong = result.getOrThrow().firstOrNull()
-                                                if (firstSong != null) {
-                                                    playBandcampSong(firstSong)
-                                                } else bandcampDetailError = "Aucun morceau disponible dans cet album."
-                                            } else bandcampDetailError = result.exceptionOrNull()?.message ?: "Impossible de lire cet album."
+                                            try {
+                                                val result = withContext(Dispatchers.IO) {
+                                                    bandcampFetchAlbumSongs(bandcampUsername, bandcampPassword, activeBandcampAlbum.id)
+                                                }
+                                                if (result.isSuccess) {
+                                                    val firstSong = result.getOrThrow().firstOrNull()
+                                                    if (firstSong != null) playBandcampSong(firstSong)
+                                                    else playbackError = "Bandcamp n'a retourné aucun morceau pour cet album."
+                                                } else playbackError = result.exceptionOrNull()?.message ?: "Impossible de récupérer les morceaux Bandcamp."
+                                            } catch (error: Exception) {
+                                                playbackError = error.message ?: "Erreur pendant la récupération des morceaux."
+                                            } finally {
+                                                bandcampDetailBusy = false
+                                            }
                                         }
                                     } else if (player == null && localTracks.isNotEmpty()) startLocalTrack(0)
-                                    else if (player == null) showBandcamp = true
+                                    else if (player == null) {
+                                        playbackError = "Connecte d'abord ta collection Bandcamp."
+                                        showBandcamp = true
+                                    }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
