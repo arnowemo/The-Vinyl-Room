@@ -97,6 +97,8 @@ private fun VinylRoomApp() {
     var showQueue by remember { mutableStateOf(false) }
     var showBandcamp by remember { mutableStateOf(false) }
     var bandcampAlbums by remember { mutableStateOf<List<BandcampAlbum>>(emptyList()) }
+    var bandcampArtwork by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    var playbackError by remember { mutableStateOf("") }
     var bandcampStatus by remember { mutableStateOf("Non connecté") }
     var bandcampBusy by remember { mutableStateOf(false) }
     var selectedBandcampAlbum by remember { mutableStateOf<BandcampAlbum?>(null) }
@@ -183,12 +185,13 @@ private fun VinylRoomApp() {
             val next = MediaPlayer()
             player = next
             next.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            if (localTracks[index].uri.startsWith("https://")) next.setDataSource(localTracks[index].uri)
+            if (localTracks[index].uri.startsWith("https://")) next.setDataSource(context, Uri.parse(localTracks[index].uri), mapOf("User-Agent" to "TheVinylRoom/1.0", "Accept" to "*/*"))
             else next.setDataSource(context, Uri.parse(localTracks[index].uri))
             next.setOnPreparedListener { media ->
                 playerPrepared = true
                 if (trackDuration <= 0L) trackDuration = media.duration.toLong()
                 media.start()
+                playbackError = ""
                 playing = true
             }
             next.setOnCompletionListener {
@@ -196,10 +199,11 @@ private fun VinylRoomApp() {
                 trackPosition = trackDuration
                 if (currentTrackIndex < localTracks.lastIndex) startLocalTrack(currentTrackIndex + 1)
             }
-            next.setOnErrorListener { _, _, _ -> playing = false; playerPrepared = false; true }
+            next.setOnErrorListener { _, what, extra -> playing = false; playerPrepared = false; playbackError = "Lecture Bandcamp impossible (erreur $what/$extra)."; currentTrackName = "Échec de lecture"; true }
             next.prepareAsync()
         }.onFailure {
             playing = false
+            playbackError = it.message ?: "Erreur de lecture inconnue."
             currentTrackName = "Impossible de lire ce fichier"
         }
     }
@@ -292,9 +296,9 @@ private fun VinylRoomApp() {
                         val right = (safeSelected + 1) % libraryAlbums.size
                         AlbumSleeve(libraryAlbums[left], false, Modifier.width(sideW).heightIn(min = 130.dp, max = 185.dp).graphicsLayer { rotationY = 22f; alpha = .88f } .clickable { selected = left })
                         Spacer(Modifier.width(5.dp))
-                        AlbumSleeve(album, true, Modifier.width(centerW).aspectRatio(1f).shadow(22.dp, RoundedCornerShape(5.dp)).clickable { if (activeBandcampAlbum != null) { selectedBandcampAlbum = activeBandcampAlbum; showBandcamp = true; bandcampDetailBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { bandcampFetchAlbumSongs(bandcampUsername, bandcampPassword, activeBandcampAlbum.id) }; bandcampDetailBusy = false; if (result.isSuccess) bandcampSongs = result.getOrThrow() else bandcampDetailError = result.exceptionOrNull()?.message ?: "Impossible de charger cet album." } } else showAlbumDetails = true })
+                        AlbumSleeve(album, true, Modifier.width(centerW).aspectRatio(1f).shadow(22.dp, RoundedCornerShape(5.dp)).clickable { if (activeBandcampAlbum != null) { selectedBandcampAlbum = activeBandcampAlbum; showBandcamp = true; bandcampDetailBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { bandcampFetchAlbumSongs(bandcampUsername, bandcampPassword, activeBandcampAlbum.id) }; bandcampDetailBusy = false; if (result.isSuccess) bandcampSongs = result.getOrThrow() else bandcampDetailError = result.exceptionOrNull()?.message ?: "Impossible de charger cet album." } } else showAlbumDetails = true , bandcampArtwork[activeBandcampAlbum?.id])
                         Spacer(Modifier.width(5.dp))
-                        AlbumSleeve(libraryAlbums[right], false, Modifier.width(sideW).heightIn(min = 130.dp, max = 185.dp).graphicsLayer { rotationY = -22f; alpha = .88f }.clickable { selected = right })
+                        AlbumSleeve(libraryAlbums[right], false, Modifier.width(sideW).heightIn(min = 130.dp, max = 185.dp).graphicsLayer { rotationY = -22f; alpha = .88f }.clickable { selected = right }, bandcampArtwork[bandcampAlbums.getOrNull(right)?.id])
                     }
                 }
 
@@ -302,6 +306,7 @@ private fun VinylRoomApp() {
                     IconButton(onClick = { selected = (safeSelected - 1 + libraryAlbums.size) % libraryAlbums.size }) { Icon(Icons.Default.ChevronLeft, null, tint = amber, modifier = Modifier.size(30.dp)) }
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (currentTrackIndex >= 0) currentTrackName else album.artist, color = cream, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1)
+                        if (playbackError.isNotBlank()) Text(playbackError, color = Color(0xFFFF9C85), fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
                         Text(if (currentTrackIndex >= 0) listOf(trackArtist, trackAlbum).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Fichier audio local" } else album.title, color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
                     }
                     IconButton(onClick = { selected = (safeSelected + 1) % libraryAlbums.size }) { Icon(Icons.Default.ChevronRight, null, tint = amber, modifier = Modifier.size(30.dp)) }
@@ -451,7 +456,15 @@ private fun VinylRoomApp() {
                             bandcampBusy = false
                             if (result.isSuccess) {
                                 bandcampAlbums = result.getOrThrow()
-                                bandcampStatus = "Connexion réussie · ${bandcampAlbums.size} albums récupérés"
+                                selected = 0
+                                bandcampStatus = "Connexion réussie · ${bandcampAlbums.size} albums récupérés · chargement des pochettes…"
+                                val covers = withContext(Dispatchers.IO) {
+                                    bandcampAlbums.mapNotNull { item ->
+                                        if (item.coverArt.isBlank()) null else bandcampFetchCoverArt(bandcampUsername.trim(), bandcampPassword, item.coverArt)?.let { item.id to it }
+                                    }.toMap()
+                                }
+                                bandcampArtwork = covers
+                                bandcampStatus = "Connexion réussie · ${bandcampAlbums.size} albums · ${covers.size} pochettes"
                                 prefs.edit().putString("bc_user", bandcampUsername.trim()).putString("bc_pass", encryptSecret(context, bandcampPassword)).apply()
                             } else {
                                 bandcampStatus = result.exceptionOrNull()?.message ?: "Connexion impossible"
@@ -699,10 +712,28 @@ private fun bandcampAuthParams(username: String, password: String): Map<String, 
     return mapOf("u" to username, "t" to token, "s" to salt, "v" to "1.16.1", "c" to "TheVinylRoom", "f" to "xml")
 }
 
+private fun bandcampFetchCoverArt(username: String, password: String, coverId: String): ImageBitmap? = runCatching {
+    val builder = Uri.parse("https://bandcamp.com/api/subsonic/rest/getCoverArt.view").buildUpon()
+    bandcampAuthParams(username, password).forEach { (key, value) -> builder.appendQueryParameter(key, value) }
+    builder.appendQueryParameter("id", coverId)
+    builder.appendQueryParameter("size", "600")
+    val connection = (URL(builder.build().toString()).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 12000
+        readTimeout = 18000
+        setRequestProperty("Accept", "image/*")
+        setRequestProperty("User-Agent", "TheVinylRoom/1.0")
+    }
+    try {
+        if (connection.responseCode !in 200..299) return@runCatching null
+        connection.inputStream.use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+    } finally { connection.disconnect() }
+}.getOrNull()
+
 private fun bandcampStreamUrl(username: String, password: String, songId: String): String {
     val builder = Uri.parse("https://bandcamp.com/api/subsonic/rest/stream.view").buildUpon()
     bandcampAuthParams(username, password).forEach { (key, value) -> builder.appendQueryParameter(key, value) }
     builder.appendQueryParameter("id", songId)
+    builder.appendQueryParameter("format", "mp3")
     return builder.build().toString()
 }
 
@@ -944,9 +975,11 @@ private fun RoomBackdrop(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun AlbumSleeve(album: Album, active: Boolean, modifier: Modifier = Modifier) {
+private fun AlbumSleeve(album: Album, active: Boolean, modifier: Modifier = Modifier, artwork: ImageBitmap? = null) {
     Box(modifier.clip(RoundedCornerShape(5.dp)).background(Brush.linearGradient(album.colors))) {
-        if (active && album.artist == "Explosions in the Sky") {
+        if (artwork != null) {
+            Image(artwork, contentDescription = "Pochette Bandcamp", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } else if (active && album.artist == "Explosions in the Sky") {
             Image(
                 painter = painterResource(id = R.drawable.cover_eits),
                 contentDescription = "Pochette de The Earth Is Not a Cold Dead Place",
@@ -963,7 +996,7 @@ private fun AlbumSleeve(album: Album, active: Boolean, modifier: Modifier = Modi
                 drawRect(Brush.verticalGradient(listOf(Color.Transparent,Color.Black.copy(alpha=.65f))))
             }
         } else Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha=.7f)))))
-        if (!(active && album.artist == "Explosions in the Sky")) {
+        if (artwork == null && !(active && album.artist == "Explosions in the Sky")) {
             Text(album.mark, color = Color.White.copy(alpha=.88f), fontSize = if (active) 78.sp else 42.sp, modifier = Modifier.align(Alignment.Center))
         }
         if (active) Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
