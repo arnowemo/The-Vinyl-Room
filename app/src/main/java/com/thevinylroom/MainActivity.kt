@@ -142,7 +142,12 @@ private fun VinylRoomApp() {
             showQueue = true
         }
     }
-    val album = albums[selected]
+    val libraryAlbums = if (bandcampAlbums.isNotEmpty()) bandcampAlbums.map { item ->
+        Album(item.artist, item.title, listOf(Color(0xFF34251E), Color(0xFFB27A4E), Color(0xFF130D0A)), "♫")
+    } else albums
+    val safeSelected = selected.coerceIn(0, libraryAlbums.lastIndex)
+    val album = libraryAlbums[safeSelected]
+    val activeBandcampAlbum = bandcampAlbums.getOrNull(safeSelected)
 
     fun startLocalTrack(index: Int) {
         if (index !in localTracks.indices) return
@@ -178,7 +183,8 @@ private fun VinylRoomApp() {
             val next = MediaPlayer()
             player = next
             next.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            next.setDataSource(context, Uri.parse(localTracks[index].uri))
+            if (localTracks[index].uri.startsWith("https://")) next.setDataSource(localTracks[index].uri)
+            else next.setDataSource(context, Uri.parse(localTracks[index].uri))
             next.setOnPreparedListener { media ->
                 playerPrepared = true
                 if (trackDuration <= 0L) trackDuration = media.duration.toLong()
@@ -272,7 +278,7 @@ private fun VinylRoomApp() {
                         detectHorizontalDragGestures(
                             onHorizontalDrag = { _, drag -> total += drag },
                             onDragEnd = {
-                                if (abs(total) > 35f) selected = if (total < 0) (selected + 1) % albums.size else (selected - 1 + albums.size) % albums.size
+                                if (abs(total) > 35f) selected = if (total < 0) (safeSelected + 1) % libraryAlbums.size else (safeSelected - 1 + libraryAlbums.size) % libraryAlbums.size
                                 total = 0f
                             }
                         )
@@ -282,23 +288,23 @@ private fun VinylRoomApp() {
                     val sideW = (maxWidth * .19f).coerceAtLeast(54.dp)
                     val centerW = (maxWidth * .64f).coerceAtMost(290.dp)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        val left = (selected - 1 + albums.size) % albums.size
-                        val right = (selected + 1) % albums.size
-                        AlbumSleeve(albums[left], false, Modifier.width(sideW).heightIn(min = 130.dp, max = 185.dp).graphicsLayer { rotationY = 22f; alpha = .88f }.clickable { selected = left })
+                        val left = (safeSelected - 1 + libraryAlbums.size) % libraryAlbums.size
+                        val right = (safeSelected + 1) % libraryAlbums.size
+                        AlbumSleeve(libraryAlbums[left], false, Modifier.width(sideW).heightIn(min = 130.dp, max = 185.dp).graphicsLayer { rotationY = 22f; alpha = .88f } .clickable { selected = left })
                         Spacer(Modifier.width(5.dp))
-                        AlbumSleeve(album, true, Modifier.width(centerW).aspectRatio(1f).shadow(22.dp, RoundedCornerShape(5.dp)))
+                        AlbumSleeve(album, true, Modifier.width(centerW).aspectRatio(1f).shadow(22.dp, RoundedCornerShape(5.dp)).clickable { if (activeBandcampAlbum != null) { selectedBandcampAlbum = activeBandcampAlbum; showBandcamp = true; bandcampDetailBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { bandcampFetchAlbumSongs(bandcampUsername, bandcampPassword, activeBandcampAlbum.id) }; bandcampDetailBusy = false; if (result.isSuccess) bandcampSongs = result.getOrThrow() else bandcampDetailError = result.exceptionOrNull()?.message ?: "Impossible de charger cet album." } } else showAlbumDetails = true })
                         Spacer(Modifier.width(5.dp))
-                        AlbumSleeve(albums[right], false, Modifier.width(sideW).heightIn(min = 130.dp, max = 185.dp).graphicsLayer { rotationY = -22f; alpha = .88f }.clickable { selected = right })
+                        AlbumSleeve(libraryAlbums[right], false, Modifier.width(sideW).heightIn(min = 130.dp, max = 185.dp).graphicsLayer { rotationY = -22f; alpha = .88f }.clickable { selected = right })
                     }
                 }
 
                 Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    IconButton(onClick = { selected = (selected - 1 + albums.size) % albums.size }) { Icon(Icons.Default.ChevronLeft, null, tint = amber, modifier = Modifier.size(30.dp)) }
+                    IconButton(onClick = { selected = (safeSelected - 1 + libraryAlbums.size) % libraryAlbums.size }) { Icon(Icons.Default.ChevronLeft, null, tint = amber, modifier = Modifier.size(30.dp)) }
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (currentTrackIndex >= 0) currentTrackName else album.artist, color = cream, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1)
                         Text(if (currentTrackIndex >= 0) listOf(trackArtist, trackAlbum).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Fichier audio local" } else album.title, color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
                     }
-                    IconButton(onClick = { selected = (selected + 1) % albums.size }) { Icon(Icons.Default.ChevronRight, null, tint = amber, modifier = Modifier.size(30.dp)) }
+                    IconButton(onClick = { selected = (safeSelected + 1) % libraryAlbums.size }) { Icon(Icons.Default.ChevronRight, null, tint = amber, modifier = Modifier.size(30.dp)) }
                 }
 
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.Center) {
@@ -349,8 +355,23 @@ private fun VinylRoomApp() {
                                     if (player != null && playerPrepared) {
                                         if (player?.isPlaying == true) { player?.pause(); playing = false }
                                         else { player?.start(); playing = true }
-                                    } else if (player == null && localTracks.isNotEmpty()) startLocalTrack(if (currentTrackIndex >= 0) currentTrackIndex else 0)
-                                    else if (player == null) showQueue = true
+                                    } else if (player == null && currentTrackIndex >= 0 && localTracks.isNotEmpty()) startLocalTrack(currentTrackIndex)
+                                    else if (player == null && activeBandcampAlbum != null) {
+                                        bandcampDetailBusy = true
+                                        scope.launch {
+                                            val result = withContext(Dispatchers.IO) { bandcampFetchAlbumSongs(bandcampUsername, bandcampPassword, activeBandcampAlbum.id) }
+                                            bandcampDetailBusy = false
+                                            if (result.isSuccess) {
+                                                val firstSong = result.getOrThrow().firstOrNull()
+                                                if (firstSong != null) {
+                                                    val streamUrl = bandcampStreamUrl(bandcampUsername, bandcampPassword, firstSong.id)
+                                                    localTracks = localTracks.filterNot { it.uri == streamUrl } + LocalTrack(streamUrl, firstSong.title)
+                                                    startLocalTrack(localTracks.lastIndex)
+                                                } else bandcampDetailError = "Aucun morceau disponible dans cet album."
+                                            } else bandcampDetailError = result.exceptionOrNull()?.message ?: "Impossible de lire cet album."
+                                        }
+                                    } else if (player == null && localTracks.isNotEmpty()) startLocalTrack(0)
+                                    else if (player == null) showBandcamp = true
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -373,7 +394,7 @@ private fun VinylRoomApp() {
                             activeNav = label
                             if (label == "Rechercher") showSearch = true
                             if (label == "Favoris") {
-                                val firstFavorite = albums.indexOfFirst { it.artist in likedAlbums }
+                                val firstFavorite = libraryAlbums.indexOfFirst { it.artist in likedAlbums }
                                 if (firstFavorite >= 0) selected = firstFavorite
                             }
                         }) {
