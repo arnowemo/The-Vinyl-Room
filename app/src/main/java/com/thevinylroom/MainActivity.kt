@@ -105,6 +105,7 @@ private fun VinylRoomApp() {
     var bandcampAlbums by remember { mutableStateOf<List<BandcampAlbum>>(emptyList()) }
     var bandcampArtwork by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
     var playbackError by remember { mutableStateOf("") }
+    var playbackDiagnostic by remember { mutableStateOf("Lecteur en attente") }
     var bandcampStatus by remember { mutableStateOf("Non connecté") }
     var bandcampBusy by remember { mutableStateOf(false) }
     var selectedBandcampAlbum by remember { mutableStateOf<BandcampAlbum?>(null) }
@@ -171,6 +172,7 @@ private fun VinylRoomApp() {
         trackAlbum = track.album
         embeddedArtwork = null
         playbackError = ""
+        playbackDiagnostic = "Création du lecteur"
         playing = false
         runCatching {
             val httpFactory = DefaultHttpDataSource.Factory()
@@ -185,6 +187,14 @@ private fun VinylRoomApp() {
             player = next
             next.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
+                    val label = when (state) {
+                        Player.STATE_IDLE -> "IDLE"
+                        Player.STATE_BUFFERING -> "BUFFERING"
+                        Player.STATE_READY -> "READY"
+                        Player.STATE_ENDED -> "ENDED"
+                        else -> "UNKNOWN($state)"
+                    }
+                    playbackDiagnostic = "État=$label · playWhenReady=" + next.playWhenReady + " · position=" + next.currentPosition + "ms"
                     when (state) {
                         Player.STATE_BUFFERING -> {
                             playerPrepared = false
@@ -204,13 +214,22 @@ private fun VinylRoomApp() {
                     }
                 }
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    playbackDiagnostic = "isPlaying=" + isPlaying + " · playWhenReady=" + next.playWhenReady + " · state=" + next.playbackState
                     playing = isPlaying
                     if (isPlaying) playbackError = ""
                 }
                 override fun onPlayerError(error: PlaybackException) {
                     playing = false
                     playerPrepared = false
-                    playbackError = "Erreur audio : ${error.errorCodeName} · ${error.message ?: "flux indisponible"}"
+                    playbackError = "Erreur audio : " + error.errorCodeName
+                    playbackDiagnostic = error.javaClass.simpleName + " · " + error.message.orEmpty().take(500)
+                    var cause = error.cause
+                    repeat(4) {
+                        if (cause != null) {
+                            playbackDiagnostic += " ← " + cause.javaClass.simpleName + ": " + cause.message.orEmpty().take(220)
+                            cause = cause.cause
+                        }
+                    }
                 }
             })
             next.setMediaItem(MediaItem.fromUri(track.uri))
@@ -349,6 +368,7 @@ private fun VinylRoomApp() {
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (currentTrackIndex >= 0 || bandcampDetailBusy) currentTrackName else album.artist, color = cream, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1)
                         if (playbackError.isNotBlank()) Text(playbackError, color = Color(0xFFFF9C85), fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
+                        if (currentTrackIndex >= 0) Text(playbackDiagnostic, color = Color(0xFFFFD7A8), fontSize = 8.sp, textAlign = TextAlign.Center, maxLines = 3)
                         Text(if (currentTrackIndex >= 0) listOf(trackArtist, trackAlbum).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Fichier audio local" } else album.title, color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
                     }
                     IconButton(onClick = { selected = (safeSelected + 1) % libraryAlbums.size }) { Icon(Icons.Default.ChevronRight, null, tint = amber, modifier = Modifier.size(30.dp)) }
