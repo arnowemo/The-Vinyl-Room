@@ -218,6 +218,9 @@ private fun VinylRoomApp() {
                     playing = isPlaying
                     if (isPlaying) playbackError = ""
                 }
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    playbackDiagnostic = "État=" + next.playbackState + " · playWhenReady=" + playWhenReady + " · raison=" + reason + " · position=" + next.currentPosition + "ms"
+                }
                 override fun onPlayerError(error: PlaybackException) {
                     playing = false
                     playerPrepared = false
@@ -233,8 +236,8 @@ private fun VinylRoomApp() {
                 }
             })
             next.setMediaItem(MediaItem.fromUri(track.uri))
-            next.prepare()
             next.playWhenReady = true
+            next.prepare()
         }.onFailure {
             playing = false
             playbackError = it.message ?: "Impossible de démarrer le lecteur audio."
