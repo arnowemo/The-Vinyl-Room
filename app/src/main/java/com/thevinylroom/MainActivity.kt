@@ -3,6 +3,7 @@ package com.thevinylroom
 import android.os.Bundle
 import android.content.Context
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -185,6 +186,7 @@ private fun VinylRoomApp() {
                 .setAllowCrossProtocolRedirects(true)
                 .setConnectTimeoutMs(20000)
                 .setReadTimeoutMs(30000)
+                .setDefaultRequestProperties(mapOf("Accept" to "audio/mpeg, audio/*, application/octet-stream", "Icy-MetaData" to "0"))
             val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
             val next = ExoPlayer.Builder(context)
                 .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
@@ -252,7 +254,8 @@ private fun VinylRoomApp() {
                     }
                 }
             })
-            next.setMediaItem(MediaItem.fromUri(track.uri))
+            val mediaItem = MediaItem.Builder().setUri(track.uri).setMimeType(MimeTypes.AUDIO_MPEG).build()
+            next.setMediaItem(mediaItem)
             next.playWhenReady = true
             next.prepare()
         }.onFailure {
