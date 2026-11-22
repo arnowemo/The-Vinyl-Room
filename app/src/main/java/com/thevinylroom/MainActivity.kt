@@ -110,6 +110,7 @@ private fun VinylRoomApp() {
     var bandcampArtwork by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
     var playbackError by remember { mutableStateOf("") }
     var playbackDiagnostic by remember { mutableStateOf("Lecteur en attente") }
+    var streamHttpDiagnostic by remember { mutableStateOf("") }
     var bandcampStatus by remember { mutableStateOf("Non connecté") }
     var bandcampBusy by remember { mutableStateOf(false) }
     var selectedBandcampAlbum by remember { mutableStateOf<BandcampAlbum?>(null) }
@@ -268,7 +269,7 @@ private fun VinylRoomApp() {
         playbackDiagnostic = "Test HTTP Bandcamp en cours…"
         scope.launch {
             val report = withContext(Dispatchers.IO) { bandcampInspectStream(streamUrl) }
-            playbackDiagnostic = report
+            streamHttpDiagnostic = report
             startLocalTrack(index, track)
         }
     }
@@ -393,6 +394,7 @@ private fun VinylRoomApp() {
                         Text(if (currentTrackIndex >= 0 || bandcampDetailBusy) currentTrackName else album.artist, color = cream, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1)
                         if (playbackError.isNotBlank()) Text(playbackError, color = Color(0xFFFF9C85), fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
                         if (currentTrackIndex >= 0) Text(playbackDiagnostic, color = Color(0xFFFFD7A8), fontSize = 8.sp, textAlign = TextAlign.Center, maxLines = 3)
+                        if (streamHttpDiagnostic.isNotBlank()) Text(streamHttpDiagnostic, color = Color(0xFFFFD7A8), fontSize = 8.sp, textAlign = TextAlign.Center, maxLines = 4)
                         Text(if (currentTrackIndex >= 0) listOf(trackArtist, trackAlbum).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Fichier audio local" } else album.title, color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
                     }
                     IconButton(onClick = { selected = (safeSelected + 1) % libraryAlbums.size }) { Icon(Icons.Default.ChevronRight, null, tint = amber, modifier = Modifier.size(30.dp)) }
