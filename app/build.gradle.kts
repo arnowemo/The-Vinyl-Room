@@ -46,7 +46,7 @@ val decodeRoomBackground by tasks.registering {
         target.writeBytes(Base64.getDecoder().decode(encodedFile.asFile.readText().trim()))
         val coverTarget = coverOutputFile.asFile
         coverTarget.parentFile.mkdirs()
-        coverTarget.writeBytes(java.util.Base64.getDecoder().decode(coverEncodedFile.asFile.readText().trim()))
+        coverTarget.writeBytes(Base64.getDecoder().decode(coverEncodedFile.asFile.readText().trim()))
     }
 }
 
