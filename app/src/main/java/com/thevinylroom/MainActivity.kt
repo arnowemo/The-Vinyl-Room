@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -59,6 +60,7 @@ private fun VinylRoomApp() {
     MaterialTheme {
         Box(Modifier.fillMaxSize().background(roomDark)) {
             RoomBackdrop(Modifier.fillMaxSize())
+            AmbientDust(Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                 0f to Color(0x33090000), .45f to Color(0x18090000), .72f to Color(0x44090000), 1f to Color(0xCC100804)
             )))
@@ -71,7 +73,7 @@ private fun VinylRoomApp() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Menu, null, tint = cream, modifier = Modifier.size(25.dp))
                         Spacer(Modifier.width(14.dp))
-                        Icon(Icons.Default.GraphicEq, null, tint = amber, modifier = Modifier.size(28.dp))
+                        AnimatedEqualizer(playing = playing, modifier = Modifier.size(width = 28.dp, height = 25.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("THE VINYL ROOM", color = cream, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.3.sp)
                     }
@@ -168,7 +170,19 @@ private fun VinylRoomApp() {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Shuffle, null, tint = muted)
                         Icon(Icons.Default.SkipPrevious, null, tint = cream, modifier = Modifier.size(29.dp))
-                        Box(Modifier.size(62.dp).clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFFFFD49D), amber))).clickable { playing = !playing }, contentAlignment = Alignment.Center) {
+                        val pulse = rememberInfiniteTransition(label = "playGlow")
+                        val glow by pulse.animateFloat(
+                            initialValue = 0.82f, targetValue = 1.08f,
+                            animationSpec = infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                            label = "playPulse"
+                        )
+                        Box(
+                            Modifier.size(68.dp).graphicsLayer { scaleX = if (playing) glow else 1f; scaleY = if (playing) glow else 1f }
+                                .shadow(if (playing) 24.dp else 8.dp, CircleShape)
+                                .clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFFFFD49D), amber)))
+                                .clickable { playing = !playing },
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color(0xFF21130D), modifier = Modifier.size(35.dp))
                         }
                         Icon(Icons.Default.SkipNext, null, tint = cream, modifier = Modifier.size(29.dp))
@@ -191,6 +205,54 @@ private fun VinylRoomApp() {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedEqualizer(playing: Boolean, modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "equalizer")
+    val heights = (0..4).map { i ->
+        val animated by transition.animateFloat(
+            initialValue = .28f, targetValue = if (playing) .95f else .28f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(if (playing) 360 + i * 95 else 900, easing = FastOutSlowInEasing, delayMillis = i * 75),
+                repeatMode = RepeatMode.Reverse
+            ), label = "bar$i"
+        )
+        if (playing) animated else .22f + i * .035f
+    }
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        heights.forEach { h ->
+            Box(Modifier.weight(1f).fillMaxHeight(h).clip(RoundedCornerShape(3.dp)).background(amber))
+        }
+    }
+}
+
+@Composable
+private fun AmbientDust(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "ambientDust")
+    val drift by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Restart),
+        label = "dustDrift"
+    )
+    val shimmer by transition.animateFloat(
+        initialValue = .12f, targetValue = .34f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "dustShimmer"
+    )
+    Canvas(modifier) {
+        val particles = listOf(
+            .08f to .18f, .19f to .34f, .31f to .12f, .44f to .26f, .58f to .17f,
+            .72f to .31f, .86f to .14f, .94f to .42f, .13f to .57f, .37f to .68f,
+            .63f to .55f, .81f to .72f, .24f to .83f, .51f to .91f, .91f to .86f
+        )
+        particles.forEachIndexed { index, point ->
+            val x = size.width * point.first + kotlin.math.sin((drift * 6.28f) + index) * 9.dp.toPx()
+            val y = size.height * ((point.second + drift * (.10f + index % 3 * .025f)) % 1f)
+            val radius = (1.1f + (index % 3) * .45f).dp.toPx()
+            drawCircle(Color(0xFFFFD7A5).copy(alpha = shimmer * if (index % 2 == 0) 1f else .55f), radius, androidx.compose.ui.geometry.Offset(x, y))
         }
     }
 }
