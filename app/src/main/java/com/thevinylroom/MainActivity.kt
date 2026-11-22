@@ -199,8 +199,8 @@ private fun RoomBackdrop(modifier: Modifier = Modifier) {
         val w = size.width; val h = size.height
         drawRect(Brush.verticalGradient(listOf(Color(0xFF100805), Color(0xFF32190D), Color(0xFF100805))))
         // Plaster wall and warm pools of light
-        drawRect(Brush.radialGradient(listOf(Color(0xFF684027).copy(alpha=.48f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(w*.18f,h*.28f), radius=w*.52f))
-        drawRect(Brush.radialGradient(listOf(Color(0xFF4A2A1B).copy(alpha=.38f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(w*.88f,h*.42f), radius=w*.45f))
+        drawCircle(Brush.radialGradient(listOf(Color(0xFF684027).copy(alpha=.48f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(w*.18f,h*.28f), radius=w*.52f), radius=w*.52f, center=androidx.compose.ui.geometry.Offset(w*.18f,h*.28f))
+        drawCircle(Brush.radialGradient(listOf(Color(0xFF4A2A1B).copy(alpha=.38f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(w*.88f,h*.42f), radius=w*.45f), radius=w*.45f, center=androidx.compose.ui.geometry.Offset(w*.88f,h*.42f))
         // Left wooden record shelves
         val shelfW = w*.39f
         drawRect(Color(0xFF1B0E08), androidx.compose.ui.geometry.Offset(0f,h*.13f), androidx.compose.ui.geometry.Size(shelfW,h*.57f))
@@ -233,7 +233,7 @@ private fun RoomBackdrop(modifier: Modifier = Modifier) {
         drawCircle(Brush.radialGradient(listOf(Color(0xFFFFD58A),Color(0xFFB94D19))), radius=w*.047f, center=androidx.compose.ui.geometry.Offset(w*.68f,h*.75f))
         // Mug and steam on the left
         drawRoundRect(Color(0xFFB78B69), androidx.compose.ui.geometry.Offset(w*.07f,h*.80f), androidx.compose.ui.geometry.Size(w*.16f,h*.09f), androidx.compose.ui.geometry.CornerRadius(10f))
-        drawCircle(Color.Transparent, radius=w*.04f, center=androidx.compose.ui.geometry.Offset(w*.23f,h*.84f), style=androidx.compose.ui.graphics.drawscope.Stroke(width=5f), color=Color(0xFFB78B69))
+        drawArc(Color(0xFFB78B69), 270f, 180f, false, topLeft=androidx.compose.ui.geometry.Offset(w*.19f,h*.81f), size=androidx.compose.ui.geometry.Size(w*.08f,h*.07f), style=androidx.compose.ui.graphics.drawscope.Stroke(width=5f))
         for(i in 0..2) drawLine(Color(0xFFFFD4A0).copy(alpha=.18f), androidx.compose.ui.geometry.Offset(w*(.11f+i*.035f),h*.78f), androidx.compose.ui.geometry.Offset(w*(.13f+i*.035f),h*.74f), 2f)
     }
 }
