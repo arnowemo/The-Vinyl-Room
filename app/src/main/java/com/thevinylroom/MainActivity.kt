@@ -249,7 +249,7 @@ private fun AmbientDust(modifier: Modifier = Modifier) {
             .63f to .55f, .81f to .72f, .24f to .83f, .51f to .91f, .91f to .86f
         )
         particles.forEachIndexed { index, point ->
-            val x = size.width * point.first + kotlin.math.sin((drift * 6.28f) + index) * 9.dp.toPx()
+            val x = size.width * point.first + kotlin.math.sin((drift * 6.28f + index).toDouble()).toFloat() * 9.dp.toPx()
             val y = size.height * ((point.second + drift * (.10f + index % 3 * .025f)) % 1f)
             val radius = (1.1f + (index % 3) * .45f).dp.toPx()
             drawCircle(Color(0xFFFFD7A5).copy(alpha = shimmer * if (index % 2 == 0) 1f else .55f), radius, androidx.compose.ui.geometry.Offset(x, y))
