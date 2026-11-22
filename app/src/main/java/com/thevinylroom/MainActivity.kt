@@ -80,6 +80,10 @@ private fun VinylRoomApp() {
     var currentTrackIndex by remember { mutableIntStateOf(-1) }
     var currentTrackName by remember { mutableStateOf("") }
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    var playerPrepared by remember { mutableStateOf(false) }
+    DisposableEffect(player) {
+        onDispose { runCatching { player?.release() } }
+    }
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
             val added = uris.map { uri ->
@@ -101,6 +105,7 @@ private fun VinylRoomApp() {
         if (index !in localTracks.indices) return
         runCatching { player?.release() }
         player = null
+        playerPrepared = false
         currentTrackIndex = index
         currentTrackName = localTracks[index].name
         playing = false
@@ -110,11 +115,12 @@ private fun VinylRoomApp() {
             next.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
             next.setDataSource(context, Uri.parse(localTracks[index].uri))
             next.setOnPreparedListener { media ->
+                playerPrepared = true
                 media.start()
                 playing = true
             }
             next.setOnCompletionListener { playing = false }
-            next.setOnErrorListener { _, _, _ -> playing = false; true }
+            next.setOnErrorListener { _, _, _ -> playing = false; playerPrepared = false; true }
             next.prepareAsync()
         }.onFailure {
             playing = false
@@ -252,11 +258,11 @@ private fun VinylRoomApp() {
                                 .shadow(if (playing) 24.dp else 8.dp, CircleShape)
                                 .clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFFFFD49D), amber)))
                                 .clickable {
-                                    if (player != null) {
+                                    if (player != null && playerPrepared) {
                                         if (player?.isPlaying == true) { player?.pause(); playing = false }
                                         else { player?.start(); playing = true }
-                                    } else if (localTracks.isNotEmpty()) startLocalTrack(if (currentTrackIndex >= 0) currentTrackIndex else 0)
-                                    else showQueue = true
+                                    } else if (player == null && localTracks.isNotEmpty()) startLocalTrack(if (currentTrackIndex >= 0) currentTrackIndex else 0)
+                                    else if (player == null) showQueue = true
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -317,8 +323,9 @@ private fun VinylRoomApp() {
             if (immersive) {
                 ImmersiveDialog(album = album, playing = playing, onTogglePlay = {
                     if (player?.isPlaying == true) { player?.pause(); playing = false }
-                    else if (player != null) { player?.start(); playing = true }
-                    else if (localTracks.isNotEmpty()) startLocalTrack(0) else showQueue = true
+                    else if (player != null && playerPrepared) { player?.start(); playing = true }
+                    else if (player == null && localTracks.isNotEmpty()) startLocalTrack(0)
+                    else if (player == null) showQueue = true
                 }, onDismiss = { immersive = false })
             }
         }
