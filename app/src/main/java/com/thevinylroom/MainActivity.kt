@@ -486,7 +486,7 @@ private fun bandcampFetchAlbums(username: String, password: String): Result<List
             readTimeout = 20000
             setRequestProperty("Accept", "application/xml, text/xml")
         }
-        try {
+        return try {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -516,7 +516,7 @@ private fun bandcampFetchAlbums(username: String, password: String): Result<List
             event = parser.next()
         }
         if (responseStatus != "ok") throw IllegalStateException("Réponse Subsonic inattendue (statut : ${responseStatus.ifBlank { "absent" }}).")
-        responseStatus
+        return responseStatus
     }
 
     // Vérifie d'abord les identifiants et la disponibilité de l'API avant de demander la collection.
