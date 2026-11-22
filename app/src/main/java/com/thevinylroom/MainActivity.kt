@@ -6,6 +6,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import android.media.MediaMetadataRetriever
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
@@ -170,7 +173,15 @@ private fun VinylRoomApp() {
         playbackError = ""
         playing = false
         runCatching {
-            val next = ExoPlayer.Builder(context).build()
+            val httpFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent("TheVinylRoom/1.0 (Android)")
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(20000)
+                .setReadTimeoutMs(30000)
+            val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+            val next = ExoPlayer.Builder(context)
+                .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+                .build()
             player = next
             next.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
@@ -772,8 +783,8 @@ private fun bandcampStreamUrl(username: String, password: String, songId: String
     val builder = Uri.parse("https://bandcamp.com/api/subsonic/rest/stream.view").buildUpon()
     bandcampAuthParams(username, password).forEach { (key, value) -> builder.appendQueryParameter(key, value) }
     builder.appendQueryParameter("id", songId)
-    builder.appendQueryParameter("format", "mp3")
-    builder.appendQueryParameter("estimateContentLength", "true")
+    builder.appendQueryParameter("format", "raw")
+    builder.appendQueryParameter("maxBitRate", "0")
     return builder.build().toString()
 }
 
