@@ -90,6 +90,7 @@ private fun VinylRoomApp() {
                 // Three sleeves stay in view: the selected record is forward,
                 // while its neighbours tilt away like records on the reference shelf.
                 BoxWithConstraints(Modifier.fillMaxWidth().height(292.dp), contentAlignment = Alignment.Center) {
+                    val centerCoverWidth = (this.maxWidth - 144.dp).coerceAtLeast(190.dp)
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 5.dp),
                         horizontalArrangement = Arrangement.Center,
@@ -106,7 +107,7 @@ private fun VinylRoomApp() {
                         Spacer(Modifier.width(5.dp))
                         AlbumCover(
                             album, true,
-                            Modifier.width((maxWidth - 144.dp).coerceAtLeast(190.dp)).height(270.dp)
+                            Modifier.width(centerCoverWidth).height(270.dp)
                                 .graphicsLayer { shadowElevation = 24.dp.toPx() }
                         )
                         Spacer(Modifier.width(5.dp))
