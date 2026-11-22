@@ -8,6 +8,19 @@ import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Xml
+import android.util.Base64
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+import java.net.HttpURLConnection
+import java.net.URL
+import org.xmlpull.v1.XmlPullParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -44,6 +57,7 @@ private val roomDark = Color(0xFF160B07)
 
 private data class Album(val artist: String, val title: String, val colors: List<Color>, val mark: String)
 private data class LocalTrack(val uri: String, val name: String)
+private data class BandcampAlbum(val id: String, val title: String, val artist: String, val coverArt: String, val songCount: Int)
 private val albums = listOf(
     Album("Explosions in the Sky", "The Earth Is Not a Cold Dead Place", listOf(Color(0xFF152A42), Color(0xFFDB8A56), Color(0xFF080D16)), "✳"),
     Album("Alcest", "Écailles de lune", listOf(Color(0xFF101B31), Color(0xFFB8C5D5), Color(0xFF283C58)), "☾"),
@@ -64,6 +78,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun VinylRoomApp() {
+    val scope = rememberCoroutineScope()
     var selected by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -76,6 +91,16 @@ private fun VinylRoomApp() {
     var searchQuery by remember { mutableStateOf("") }
     var immersive by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
+    var showBandcamp by remember { mutableStateOf(false) }
+    var bandcampAlbums by remember { mutableStateOf<List<BandcampAlbum>>(emptyList()) }
+    var bandcampStatus by remember { mutableStateOf("Non connecté") }
+    var bandcampBusy by remember { mutableStateOf(false) }
+    var bandcampUsername by remember { mutableStateOf("") }
+    var bandcampPassword by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        bandcampUsername = prefs.getString("bc_user", "") ?: ""
+        bandcampPassword = decryptSecret(context, prefs.getString("bc_pass", null))
+    }
     var localTracks by remember {
         mutableStateOf<List<LocalTrack>>(prefs.getStringSet("local_tracks", emptySet<String>())?.map { raw ->
             val parts = raw.split("|", limit = 2)
@@ -190,7 +215,7 @@ private fun VinylRoomApp() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.LibraryAdd, null, tint = cream, modifier = Modifier.size(24.dp).clickable { audioPicker.launch(arrayOf("audio/*")) })
                         Spacer(Modifier.width(14.dp))
-                        Icon(Icons.Default.NotificationsNone, null, tint = cream, modifier = Modifier.size(25.dp))
+                        Icon(Icons.Default.Cloud, null, tint = cream, modifier = Modifier.size(25.dp).clickable { showBandcamp = true })
                         Spacer(Modifier.width(17.dp))
                         Box(Modifier.size(34.dp).clip(CircleShape).background(Brush.radialGradient(listOf(Color(0xFFAA795E), Color(0xFF171016)))).border(1.dp, amber, CircleShape), contentAlignment = Alignment.Center) {
                             Text("●", color = cream, fontSize = 10.sp)
@@ -221,9 +246,9 @@ private fun VinylRoomApp() {
                     Text("Ma bibliothèque", color = cream, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Collection de démonstration   ·   ", color = muted, fontSize = 11.sp)
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF1DB954)))
-                        Text("  Spotify à connecter", color = cream.copy(alpha = .82f), fontSize = 11.sp)
+                        Text(if (bandcampAlbums.isEmpty()) "Collection locale   ·   " else "Bandcamp · ${bandcampAlbums.size} albums   ·   ", color = muted, fontSize = 11.sp)
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(if (bandcampAlbums.isNotEmpty()) Color(0xFF6FCF97) else muted))
+                        Text(if (bandcampAlbums.isNotEmpty()) "  Connecté" else "  Bandcamp à connecter", color = cream.copy(alpha = .82f), fontSize = 11.sp)
                     }
                 }
 
@@ -348,6 +373,33 @@ private fun VinylRoomApp() {
             if (showAlbumDetails) {
                 AlbumDetailsDialog(album = album, onDismiss = { showAlbumDetails = false })
             }
+            if (showBandcamp) {
+                BandcampDialog(
+                    username = bandcampUsername,
+                    password = bandcampPassword,
+                    albums = bandcampAlbums,
+                    status = bandcampStatus,
+                    busy = bandcampBusy,
+                    onUsernameChange = { bandcampUsername = it },
+                    onPasswordChange = { bandcampPassword = it },
+                    onConnect = {
+                        bandcampBusy = true
+                        bandcampStatus = "Connexion à Bandcamp…"
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) { bandcampFetchAlbums(bandcampUsername.trim(), bandcampPassword) }
+                            bandcampBusy = false
+                            if (result.isSuccess) {
+                                bandcampAlbums = result.getOrThrow()
+                                bandcampStatus = "Connexion réussie · ${bandcampAlbums.size} albums récupérés"
+                                prefs.edit().putString("bc_user", bandcampUsername.trim()).putString("bc_pass", encryptSecret(context, bandcampPassword)).apply()
+                            } else {
+                                bandcampStatus = result.exceptionOrNull()?.message ?: "Connexion impossible"
+                            }
+                        }
+                    },
+                    onDismiss = { showBandcamp = false }
+                )
+            }
             if (showQueue) {
                 LocalLibraryDialog(
                     tracks = localTracks,
@@ -380,6 +432,130 @@ private fun VinylRoomApp() {
             }
         }
     }
+}
+
+private fun encryptSecret(context: Context, secret: String): String {
+    if (secret.isBlank()) return ""
+    val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    val key = (keyStore.getKey("vinyl_room_bandcamp", null) as? SecretKey) ?: run {
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(KeyGenParameterSpec.Builder("vinyl_room_bandcamp", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
+        generator.generateKey()
+    }
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.ENCRYPT_MODE, key)
+    val encrypted = cipher.doFinal(secret.toByteArray(Charsets.UTF_8))
+    return Base64.encodeToString(cipher.iv + encrypted, Base64.NO_WRAP)
+}
+
+private fun decryptSecret(context: Context, value: String?): String {
+    if (value.isNullOrBlank()) return ""
+    return runCatching {
+        val bytes = Base64.decode(value, Base64.NO_WRAP)
+        val key = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.getKey("vinyl_room_bandcamp", null) as SecretKey
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+        String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
+    }.getOrDefault("")
+}
+
+private fun bandcampFetchAlbums(username: String, password: String): Result<List<BandcampAlbum>> = runCatching {
+    require(username.isNotBlank() && password.isNotBlank()) { "Renseigne ton identifiant et ton mot de passe Subsonic." }
+    val endpoint = Uri.parse("https://bandcamp.com/api/subsonic/rest/getAlbumList2.view").buildUpon()
+        .appendQueryParameter("u", username)
+        .appendQueryParameter("p", password)
+        .appendQueryParameter("v", "1.16.1")
+        .appendQueryParameter("c", "TheVinylRoom")
+        .appendQueryParameter("f", "xml")
+        .appendQueryParameter("type", "alphabeticalByName")
+        .appendQueryParameter("size", "500")
+        .appendQueryParameter("offset", "0")
+        .build().toString()
+    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 15000
+        readTimeout = 20000
+        setRequestProperty("Accept", "application/xml, text/xml")
+    }
+    try {
+        val statusCode = connection.responseCode
+        val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
+        val parser = Xml.newPullParser()
+        parser.setInput(stream, "UTF-8")
+        var event = parser.eventType
+        var responseStatus = ""
+        val found = mutableListOf<BandcampAlbum>()
+        while (event != XmlPullParser.END_DOCUMENT) {
+            if (event == XmlPullParser.START_TAG) {
+                when (parser.name) {
+                    "subsonic-response" -> responseStatus = parser.getAttributeValue(null, "status") ?: ""
+                    "error" -> throw IllegalStateException(parser.getAttributeValue(null, "message") ?: "Identifiants Bandcamp refusés")
+                    "album" -> {
+                        val id = parser.getAttributeValue(null, "id") ?: ""
+                        val title = parser.getAttributeValue(null, "name") ?: parser.getAttributeValue(null, "album") ?: "Album sans titre"
+                        val artist = parser.getAttributeValue(null, "artist") ?: "Artiste inconnu"
+                        val art = parser.getAttributeValue(null, "coverArt") ?: ""
+                        val count = parser.getAttributeValue(null, "songCount")?.toIntOrNull() ?: 0
+                        if (id.isNotBlank()) found.add(BandcampAlbum(id, title, artist, art, count))
+                    }
+                }
+            }
+            event = parser.next()
+        }
+        if (statusCode !in 200..299) throw IllegalStateException("Erreur serveur Bandcamp ($statusCode)")
+        if (responseStatus != "ok") throw IllegalStateException("Bandcamp n'a pas confirmé la connexion.")
+        found
+    } finally {
+        connection.disconnect()
+    }
+}
+
+@Composable
+private fun BandcampDialog(
+    username: String,
+    password: String,
+    albums: List<BandcampAlbum>,
+    status: String,
+    busy: Boolean,
+    onUsernameChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onConnect: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF21130D),
+        titleContentColor = cream,
+        textContentColor = muted,
+        title = { Text("Connexion Bandcamp", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("API Subsonic · bandcamp.com", color = amber, fontSize = 12.sp)
+                OutlinedTextField(value = username, onValueChange = onUsernameChange, singleLine = true, label = { Text("Identifiant Subsonic") })
+                OutlinedTextField(value = password, onValueChange = onPasswordChange, singleLine = true, label = { Text("Mot de passe Subsonic") }, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                Text(status, color = if (status.startsWith("Connexion réussie")) Color(0xFF8BD5A7) else muted, fontSize = 11.sp)
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = amber)
+                if (albums.isNotEmpty()) {
+                    Text("Ta collection · ${albums.size} albums", color = cream, fontWeight = FontWeight.SemiBold)
+                    albums.take(8).forEach { item ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Album, null, tint = amber, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(item.title, color = cream, fontSize = 12.sp, maxLines = 1)
+                                Text("${item.artist} · ${item.songCount} titres", color = muted, fontSize = 10.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConnect, enabled = !busy) { Text(if (busy) "Connexion…" else "Connecter et synchroniser", color = amber) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Fermer", color = cream) } }
+    )
 }
 
 private fun formatTime(milliseconds: Long): String {
