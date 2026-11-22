@@ -371,7 +371,7 @@ private fun VinylRoomApp() {
                 )
             }
             if (immersive) {
-                ImmersiveDialog(album = album, playing = playing, onTogglePlay = {
+                ImmersiveDialog(album = album, artwork = embeddedArtwork, playing = playing, onTogglePlay = {
                     if (player?.isPlaying == true) { player?.pause(); playing = false }
                     else if (player != null && playerPrepared) { player?.start(); playing = true }
                     else if (player == null && localTracks.isNotEmpty()) startLocalTrack(0)
@@ -492,7 +492,7 @@ private fun SearchDialog(query: String, onQueryChange: (String) -> Unit, onSelec
 }
 
 @Composable
-private fun ImmersiveDialog(album: Album, playing: Boolean, onTogglePlay: () -> Unit, onDismiss: () -> Unit) {
+private fun ImmersiveDialog(album: Album, artwork: ImageBitmap?, playing: Boolean, onTogglePlay: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF100804),
