@@ -225,7 +225,9 @@ private fun AlbumSleeve(album: Album, active: Boolean, modifier: Modifier = Modi
                 drawRect(Brush.verticalGradient(listOf(Color.Transparent,Color.Black.copy(alpha=.65f))))
             }
         } else Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha=.7f)))))
-        Text(album.mark, color = Color.White.copy(alpha=.88f), fontSize = if (active) 78.sp else 42.sp, modifier = Modifier.align(Alignment.Center))
+        if (!(active && album.artist == "Explosions in the Sky")) {
+            Text(album.mark, color = Color.White.copy(alpha=.88f), fontSize = if (active) 78.sp else 42.sp, modifier = Modifier.align(Alignment.Center))
+        }
         if (active) Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
             Text(album.artist.uppercase(), color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = .7.sp)
             Text(album.title, color = Color.White.copy(alpha=.9f), fontSize = 7.sp, maxLines = 2)
