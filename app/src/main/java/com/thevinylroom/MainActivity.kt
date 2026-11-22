@@ -832,8 +832,8 @@ private fun bandcampStreamUrl(username: String, password: String, songId: String
     val builder = Uri.parse("https://bandcamp.com/api/subsonic/rest/stream.view").buildUpon()
     bandcampAuthParams(username, password).forEach { (key, value) -> builder.appendQueryParameter(key, value) }
     builder.appendQueryParameter("id", songId)
+    // raw disables transcoding; match Subsonic clients by omitting maxBitRate.
     builder.appendQueryParameter("format", "raw")
-    builder.appendQueryParameter("maxBitRate", "0")
     return builder.build().toString()
 }
 
