@@ -3,6 +3,8 @@ package com.thevinylroom
 import android.os.Bundle
 import android.content.Context
 import android.media.MediaPlayer
+import android.media.MediaMetadataRetriever
+import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -23,6 +25,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
@@ -31,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.platform.LocalContext
 import kotlin.math.abs
+import kotlinx.coroutines.delay
 
 private val amber = Color(0xFFFFB66D)
 private val cream = Color(0xFFFFE8CE)
@@ -81,6 +86,11 @@ private fun VinylRoomApp() {
     var currentTrackName by remember { mutableStateOf("") }
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
     var playerPrepared by remember { mutableStateOf(false) }
+    var trackDuration by remember { mutableLongStateOf(0L) }
+    var trackPosition by remember { mutableLongStateOf(0L) }
+    var trackArtist by remember { mutableStateOf("") }
+    var trackAlbum by remember { mutableStateOf("") }
+    var embeddedArtwork by remember { mutableStateOf<ImageBitmap?>(null) }
     DisposableEffect(player) {
         onDispose { runCatching { player?.release() } }
     }
@@ -108,23 +118,51 @@ private fun VinylRoomApp() {
         playerPrepared = false
         currentTrackIndex = index
         currentTrackName = localTracks[index].name
+        trackPosition = 0L
+        trackDuration = 0L
+        trackArtist = ""
+        trackAlbum = ""
+        embeddedArtwork = null
         playing = false
         runCatching {
+            val metadata = MediaMetadataRetriever()
+            try {
+                metadata.setDataSource(context, Uri.parse(localTracks[index].uri))
+                currentTrackName = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: localTracks[index].name
+                trackArtist = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    ?: metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST) ?: ""
+                trackAlbum = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
+                trackDuration = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                metadata.embeddedPicture?.let { bytes ->
+                    embeddedArtwork = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                }
+            } finally { metadata.release() }
             val next = MediaPlayer()
             player = next
             next.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
             next.setDataSource(context, Uri.parse(localTracks[index].uri))
             next.setOnPreparedListener { media ->
                 playerPrepared = true
+                if (trackDuration <= 0L) trackDuration = media.duration.toLong()
                 media.start()
                 playing = true
             }
-            next.setOnCompletionListener { playing = false }
+            next.setOnCompletionListener {
+                playing = false
+                trackPosition = trackDuration
+                if (currentTrackIndex < localTracks.lastIndex) startLocalTrack(currentTrackIndex + 1)
+            }
             next.setOnErrorListener { _, _, _ -> playing = false; playerPrepared = false; true }
             next.prepareAsync()
         }.onFailure {
             playing = false
             currentTrackName = "Impossible de lire ce fichier"
+        }
+    }
+    LaunchedEffect(player, playing, playerPrepared) {
+        while (player != null && playerPrepared && playing) {
+            runCatching { trackPosition = player?.currentPosition?.toLong() ?: trackPosition }
+            delay(500)
         }
     }
     val liked = album.artist in likedAlbums
@@ -220,7 +258,7 @@ private fun VinylRoomApp() {
                     IconButton(onClick = { selected = (selected - 1 + albums.size) % albums.size }) { Icon(Icons.Default.ChevronLeft, null, tint = amber, modifier = Modifier.size(30.dp)) }
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (currentTrackIndex >= 0) currentTrackName else album.artist, color = cream, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1)
-                        Text(if (currentTrackIndex >= 0) "Fichier local · lecture sur l'appareil" else album.title, color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
+                        Text(if (currentTrackIndex >= 0) listOf(trackArtist, trackAlbum).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Fichier audio local" } else album.title, color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
                     }
                     IconButton(onClick = { selected = (selected + 1) % albums.size }) { Icon(Icons.Default.ChevronRight, null, tint = amber, modifier = Modifier.size(30.dp)) }
                 }
@@ -237,12 +275,24 @@ private fun VinylRoomApp() {
                 Spacer(Modifier.weight(.12f))
                 Column(Modifier.fillMaxWidth().padding(horizontal = 26.dp, vertical = 7.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("2:41", color = cream, fontSize = 11.sp)
-                        Text("8:17", color = cream, fontSize = 11.sp)
+                        Text(if (currentTrackIndex >= 0) formatTime(trackPosition) else "—:—", color = cream, fontSize = 11.sp)
+                        Text(if (currentTrackIndex >= 0) formatTime(trackDuration) else "—:—", color = cream, fontSize = 11.sp)
                     }
-                    Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(Color(0xFF73513B))) {
-                        Box(Modifier.fillMaxWidth(.34f).fillMaxHeight().background(Brush.horizontalGradient(listOf(Color(0xFFFFD09A), amber))))
-                    }
+                    Slider(
+                        value = if (trackDuration > 0L) trackPosition.coerceIn(0L, trackDuration).toFloat() else 0f,
+                        onValueChange = { value ->
+                            trackPosition = value.toLong()
+                            if (playerPrepared) runCatching { player?.seekTo(value.toInt()) }
+                        },
+                        valueRange = 0f..trackDuration.coerceAtLeast(1L).toFloat(),
+                        enabled = currentTrackIndex >= 0 && playerPrepared && trackDuration > 0L,
+                        colors = SliderDefaults.colors(
+                            thumbColor = amber,
+                            activeTrackColor = amber,
+                            inactiveTrackColor = Color(0xFF73513B)
+                        ),
+                        modifier = Modifier.fillMaxWidth().height(22.dp)
+                    )
                     Spacer(Modifier.height(13.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Shuffle, null, tint = muted)
@@ -330,6 +380,11 @@ private fun VinylRoomApp() {
             }
         }
     }
+}
+
+private fun formatTime(milliseconds: Long): String {
+    val seconds = (milliseconds / 1000L).coerceAtLeast(0L)
+    return "%d:%02d".format(seconds / 60L, seconds % 60L)
 }
 
 @Composable
@@ -446,7 +501,9 @@ private fun ImmersiveDialog(album: Album, playing: Boolean, onTogglePlay: () -> 
         title = { Text("Écoute immersive") },
         text = {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                AlbumSleeve(album, true, Modifier.fillMaxWidth().aspectRatio(1f))
+                if (embeddedArtwork != null) {
+                    Image(embeddedArtwork!!, contentDescription = "Pochette intégrée au fichier audio", modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                } else AlbumSleeve(album, true, Modifier.fillMaxWidth().aspectRatio(1f))
                 Text(album.artist, color = cream, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                 Text(album.title, color = muted, textAlign = TextAlign.Center)
                 IconButton(onClick = onTogglePlay, modifier = Modifier.size(64.dp).background(amber, CircleShape)) {
