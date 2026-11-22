@@ -265,7 +265,12 @@ private fun VinylRoomApp() {
         val track = LocalTrack(streamUrl, song.title, song.artist, song.album, song.duration)
         val index = localTracks.indexOfFirst { it.uri == streamUrl }.let { if (it >= 0) it else localTracks.size }
         localTracks = localTracks.filterNot { it.uri == streamUrl } + track
-        startLocalTrack(index, track)
+        playbackDiagnostic = "Test HTTP Bandcamp en cours…"
+        scope.launch {
+            val report = withContext(Dispatchers.IO) { bandcampInspectStream(streamUrl) }
+            playbackDiagnostic = report
+            startLocalTrack(index, track)
+        }
     }
 
     LaunchedEffect(player, playing, playerPrepared) {
@@ -827,6 +832,36 @@ private fun bandcampStreamUrl(username: String, password: String, songId: String
     return builder.build().toString()
 }
 
+private fun bandcampInspectStream(streamUrl: String): String = runCatching {
+    val connection = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 15000
+        readTimeout = 20000
+        instanceFollowRedirects = true
+        setRequestProperty("User-Agent", "TheVinylRoom/1.0 (Android)")
+        setRequestProperty("Accept", "audio/*, application/octet-stream, */*")
+        setRequestProperty("Icy-MetaData", "0")
+    }
+    try {
+        val code = connection.responseCode
+        val type = connection.contentType.orEmpty().ifBlank { "non communiqué" }
+        val length = connection.getHeaderField("Content-Length") ?: "inconnu"
+        val host = runCatching { URL(connection.url.toString()).host }.getOrDefault("inconnu")
+        val source = if (code in 200..299) connection.inputStream else connection.errorStream
+        val bytes = source?.use { input ->
+            val buffer = ByteArray(96)
+            val count = input.read(buffer)
+            if (count > 0) buffer.copyOf(count) else byteArrayOf()
+        } ?: byteArrayOf()
+        val hex = bytes.take(16).joinToString(" ") { "%02X".format(it) }
+        val preview = if (type.contains("xml", true) || type.contains("json", true) || bytes.firstOrNull()?.toInt() == 60) {
+            bytes.toString(Charsets.UTF_8).replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(180)
+        } else ""
+        "HTTP=" + code + " · type=" + type + " · taille=" + length + " · hôte=" + host + " · octets=" + bytes.size + " · début=" + hex + if (preview.isNotBlank()) " · réponse=" + preview else ""
+    } finally { connection.disconnect() }
+}.getOrElse { error ->
+    "Échec requête HTTP · " + error.javaClass.simpleName + ": " + error.message.orEmpty().take(350)
+}
 private fun bandcampProbeStream(streamUrl: String): Result<Unit> = runCatching {
     val connection = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
