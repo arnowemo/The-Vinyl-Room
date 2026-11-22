@@ -154,17 +154,19 @@ private fun VinylRoomApp() {
     val album = libraryAlbums[safeSelected]
     val activeBandcampAlbum = bandcampAlbums.getOrNull(safeSelected)
 
-    fun startLocalTrack(index: Int) {
+    fun startLocalTrack(index: Int, trackOverride: LocalTrack? = null) {
+        if (trackOverride == null && index !in localTracks.indices) return
+        val track = trackOverride ?: localTracks[index]
         if (index !in localTracks.indices) return
         runCatching { player?.release() }
         player = null
         playerPrepared = false
         currentTrackIndex = index
-        currentTrackName = localTracks[index].name
+        currentTrackName = track.name
         trackPosition = 0L
-        trackDuration = localTracks[index].durationSeconds * 1000L
-        trackArtist = localTracks[index].artist
-        trackAlbum = localTracks[index].album
+        trackDuration = track.durationSeconds * 1000L
+        trackArtist = track.artist
+        trackAlbum = track.album
         embeddedArtwork = null
         playbackError = ""
         playing = false
@@ -176,7 +178,7 @@ private fun VinylRoomApp() {
                     when (state) {
                         Player.STATE_BUFFERING -> {
                             playerPrepared = false
-                            currentTrackName = localTracks.getOrNull(index)?.name ?: "Chargement…"
+                            currentTrackName = track.name
                         }
                         Player.STATE_READY -> {
                             playerPrepared = true
@@ -201,7 +203,7 @@ private fun VinylRoomApp() {
                     playbackError = "Erreur audio : ${error.errorCodeName} · ${error.message ?: "flux indisponible"}"
                 }
             })
-            next.setMediaItem(MediaItem.fromUri(localTracks[index].uri))
+            next.setMediaItem(MediaItem.fromUri(track.uri))
             next.prepare()
             next.playWhenReady = true
         }.onFailure {
@@ -213,8 +215,9 @@ private fun VinylRoomApp() {
         playbackError = ""
         val streamUrl = bandcampStreamUrl(bandcampUsername, bandcampPassword, song.id)
         val track = LocalTrack(streamUrl, song.title, song.artist, song.album, song.duration)
+        val index = localTracks.indexOfFirst { it.uri == streamUrl }.let { if (it >= 0) it else localTracks.size }
         localTracks = localTracks.filterNot { it.uri == streamUrl } + track
-        startLocalTrack(localTracks.lastIndex)
+        startLocalTrack(index, track)
     }
 
     LaunchedEffect(player, playing, playerPrepared) {
