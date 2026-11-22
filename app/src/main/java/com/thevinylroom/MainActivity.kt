@@ -18,6 +18,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
+import java.security.SecureRandom
 import org.xmlpull.v1.XmlPullParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -463,9 +465,14 @@ private fun decryptSecret(context: Context, value: String?): String {
 
 private fun bandcampFetchAlbums(username: String, password: String): Result<List<BandcampAlbum>> = runCatching {
     require(username.isNotBlank() && password.isNotBlank()) { "Renseigne ton identifiant et ton mot de passe Subsonic." }
+    val saltBytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
+    val salt = saltBytes.joinToString("") { "%02x".format(it) }
+    val digest = MessageDigest.getInstance("MD5").digest((password + salt).toByteArray(Charsets.UTF_8))
+    val token = digest.joinToString("") { "%02x".format(it) }
     val endpoint = Uri.parse("https://bandcamp.com/api/subsonic/rest/getAlbumList2.view").buildUpon()
         .appendQueryParameter("u", username)
-        .appendQueryParameter("p", password)
+        .appendQueryParameter("t", token)
+        .appendQueryParameter("s", salt)
         .appendQueryParameter("v", "1.16.1")
         .appendQueryParameter("c", "TheVinylRoom")
         .appendQueryParameter("f", "xml")
@@ -482,6 +489,10 @@ private fun bandcampFetchAlbums(username: String, password: String): Result<List
     try {
         val statusCode = connection.responseCode
         val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
+        if (statusCode !in 200..299) {
+            val details = stream?.bufferedReader()?.use { it.readText() }?.take(350)?.replace(Regex("<[^>]*>"), " ")?.trim().orEmpty()
+            throw IllegalStateException("Bandcamp HTTP $statusCode" + if (details.isNotBlank()) " · $details" else " · Le serveur Bandcamp a refusé la requête.")
+        }
         val parser = Xml.newPullParser()
         parser.setInput(stream, "UTF-8")
         var event = parser.eventType
@@ -504,7 +515,6 @@ private fun bandcampFetchAlbums(username: String, password: String): Result<List
             }
             event = parser.next()
         }
-        if (statusCode !in 200..299) throw IllegalStateException("Erreur serveur Bandcamp ($statusCode)")
         if (responseStatus != "ok") throw IllegalStateException("Bandcamp n'a pas confirmé la connexion.")
         found
     } finally {
