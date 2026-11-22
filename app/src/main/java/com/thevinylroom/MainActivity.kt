@@ -2,7 +2,10 @@ package com.thevinylroom
 
 import android.os.Bundle
 import android.content.Context
-import android.media.MediaPlayer
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import android.media.MediaMetadataRetriever
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
@@ -119,7 +122,7 @@ private fun VinylRoomApp() {
     }
     var currentTrackIndex by remember { mutableIntStateOf(-1) }
     var currentTrackName by remember { mutableStateOf("") }
-    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var playerPrepared by remember { mutableStateOf(false) }
     var trackDuration by remember { mutableLongStateOf(0L) }
     var trackPosition by remember { mutableLongStateOf(0L) }
@@ -159,53 +162,51 @@ private fun VinylRoomApp() {
         currentTrackIndex = index
         currentTrackName = localTracks[index].name
         trackPosition = 0L
-        trackDuration = 0L
+        trackDuration = localTracks[index].durationSeconds * 1000L
         trackArtist = localTracks[index].artist
         trackAlbum = localTracks[index].album
-        trackDuration = localTracks[index].durationSeconds * 1000L
         embeddedArtwork = null
+        playbackError = ""
         playing = false
         runCatching {
-            if (!localTracks[index].uri.startsWith("https://")) {
-                val metadata = MediaMetadataRetriever()
-                try {
-                    metadata.setDataSource(context, Uri.parse(localTracks[index].uri))
-                    currentTrackName = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: localTracks[index].name
-                    trackArtist = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                        ?: metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST) ?: ""
-                    trackAlbum = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
-                    trackDuration = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                    metadata.embeddedPicture?.let { bytes ->
-                        embeddedArtwork = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                    }
-                } finally { metadata.release() }
-            } else {
-                trackArtist = localTracks[index].artist.ifBlank { "Bandcamp" }
-                trackAlbum = localTracks[index].album
-            }
-            val next = MediaPlayer()
+            val next = ExoPlayer.Builder(context).build()
             player = next
-            next.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            if (localTracks[index].uri.startsWith("https://")) next.setDataSource(context, Uri.parse(localTracks[index].uri), mapOf("User-Agent" to "TheVinylRoom/1.0", "Accept" to "audio/mpeg, audio/*, */*"))
-            else next.setDataSource(context, Uri.parse(localTracks[index].uri))
-            next.setOnPreparedListener { media ->
-                playerPrepared = true
-                if (trackDuration <= 0L) trackDuration = media.duration.toLong()
-                media.start()
-                playbackError = ""
-                playing = true
-            }
-            next.setOnCompletionListener {
-                playing = false
-                trackPosition = trackDuration
-                if (currentTrackIndex < localTracks.lastIndex) startLocalTrack(currentTrackIndex + 1)
-            }
-            next.setOnErrorListener { _, what, extra -> playing = false; playerPrepared = false; playbackError = "Lecture Bandcamp impossible (erreur $what/$extra)."; currentTrackName = "Échec de lecture"; true }
-            next.prepareAsync()
+            next.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    when (state) {
+                        Player.STATE_BUFFERING -> {
+                            playerPrepared = false
+                            currentTrackName = localTracks.getOrNull(index)?.name ?: "Chargement…"
+                        }
+                        Player.STATE_READY -> {
+                            playerPrepared = true
+                            if (next.duration > 0L) trackDuration = next.duration
+                            playing = next.isPlaying
+                        }
+                        Player.STATE_ENDED -> {
+                            playing = false
+                            trackPosition = trackDuration
+                            if (currentTrackIndex < localTracks.lastIndex) startLocalTrack(currentTrackIndex + 1)
+                        }
+                        Player.STATE_IDLE -> playerPrepared = false
+                    }
+                }
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    playing = isPlaying
+                    if (isPlaying) playbackError = ""
+                }
+                override fun onPlayerError(error: PlaybackException) {
+                    playing = false
+                    playerPrepared = false
+                    playbackError = "Erreur audio : ${error.errorCodeName} · ${error.message ?: "flux indisponible"}"
+                }
+            })
+            next.setMediaItem(MediaItem.fromUri(localTracks[index].uri))
+            next.prepare()
+            next.playWhenReady = true
         }.onFailure {
             playing = false
-            playbackError = it.message ?: "Erreur de lecture inconnue."
-            currentTrackName = "Impossible de lire ce fichier"
+            playbackError = it.message ?: "Impossible de démarrer le lecteur audio."
         }
     }
     fun playBandcampSong(song: BandcampSong) {
@@ -218,7 +219,7 @@ private fun VinylRoomApp() {
 
     LaunchedEffect(player, playing, playerPrepared) {
         while (player != null && playerPrepared && playing) {
-            runCatching { trackPosition = player?.currentPosition?.toLong() ?: trackPosition }
+            runCatching { trackPosition = player?.currentPosition ?: trackPosition }
             delay(500)
         }
     }
@@ -359,7 +360,7 @@ private fun VinylRoomApp() {
                         value = if (trackDuration > 0L) trackPosition.coerceIn(0L, trackDuration).toFloat() else 0f,
                         onValueChange = { value ->
                             trackPosition = value.toLong()
-                            if (playerPrepared) runCatching { player?.seekTo(value.toInt()) }
+                            if (playerPrepared) runCatching { player?.seekTo(value.toLong()) }
                         },
                         valueRange = 0f..trackDuration.coerceAtLeast(1L).toFloat(),
                         enabled = currentTrackIndex >= 0 && playerPrepared && trackDuration > 0L,
@@ -387,7 +388,7 @@ private fun VinylRoomApp() {
                                 .clickable {
                                     if (player != null && playerPrepared) {
                                         if (player?.isPlaying == true) { player?.pause(); playing = false }
-                                        else { player?.start(); playing = true }
+                                        else { player?.play(); playing = true }
                                     } else if (currentTrackIndex >= 0 && localTracks.isNotEmpty()) {
                                         startLocalTrack(currentTrackIndex)
                                     } else if (activeBandcampAlbum != null) {
@@ -522,7 +523,7 @@ private fun VinylRoomApp() {
             if (immersive) {
                 ImmersiveDialog(album = album, artwork = embeddedArtwork, playing = playing, onTogglePlay = {
                     if (player?.isPlaying == true) { player?.pause(); playing = false }
-                    else if (player != null && playerPrepared) { player?.start(); playing = true }
+                    else if (player != null && playerPrepared) { player?.play(); playing = true }
                     else if (player == null && localTracks.isNotEmpty()) startLocalTrack(0)
                     else if (player == null) showQueue = true
                 }, onDismiss = { immersive = false })
