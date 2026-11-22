@@ -157,7 +157,6 @@ private fun VinylRoomApp() {
     fun startLocalTrack(index: Int, trackOverride: LocalTrack? = null) {
         if (trackOverride == null && index !in localTracks.indices) return
         val track = trackOverride ?: localTracks[index]
-        if (index !in localTracks.indices) return
         runCatching { player?.release() }
         player = null
         playerPrepared = false
