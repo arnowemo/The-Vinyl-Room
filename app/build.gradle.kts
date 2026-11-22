@@ -35,11 +35,16 @@ dependencies {
 val decodeRoomBackground by tasks.registering {
     val encodedFile = layout.projectDirectory.file("src/main/assets/room_background.jpg.b64")
     val outputFile = layout.projectDirectory.file("src/main/res/drawable-nodpi/room_background.jpg")
-    outputs.file(outputFile)
+    val coverEncodedFile = layout.projectDirectory.file("src/main/assets/eits_cover.jpg.b64")
+    val coverOutputFile = layout.projectDirectory.file("src/main/res/drawable-nodpi/cover_eits.jpg")
+    outputs.files(outputFile, coverOutputFile)
     doLast {
         val target = outputFile.asFile
         target.parentFile.mkdirs()
         target.writeBytes(java.util.Base64.getDecoder().decode(encodedFile.asFile.readText().trim()))
+        val coverTarget = coverOutputFile.asFile
+        coverTarget.parentFile.mkdirs()
+        coverTarget.writeBytes(java.util.Base64.getDecoder().decode(coverEncodedFile.asFile.readText().trim()))
     }
 }
 
