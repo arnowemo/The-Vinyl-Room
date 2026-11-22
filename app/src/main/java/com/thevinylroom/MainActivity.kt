@@ -6,6 +6,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
+import java.io.IOException
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -185,6 +189,18 @@ private fun VinylRoomApp() {
                 .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
                 .build()
             player = next
+            next.addAnalyticsListener(object : AnalyticsListener {
+                override fun onLoadStarted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo, mediaLoadData: MediaLoadData) {
+                    val safeUri = loadEventInfo.uri.toString().substringBefore("?")
+                    playbackDiagnostic = "HTTP démarré · " + safeUri.take(100) + " · type=" + mediaLoadData.dataType
+                }
+                override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo, mediaLoadData: MediaLoadData) {
+                    playbackDiagnostic = "Chargement reçu · " + loadEventInfo.bytesLoaded + " octets · " + loadEventInfo.loadDurationMs + "ms · type=" + mediaLoadData.dataType
+                }
+                override fun onLoadError(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo, mediaLoadData: MediaLoadData, error: IOException, wasCanceled: Boolean) {
+                    playbackDiagnostic = "Erreur chargement · " + error.javaClass.simpleName + ": " + error.message.orEmpty().take(500) + " · annulé=" + wasCanceled
+                }
+            })
             next.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
                     val label = when (state) {
