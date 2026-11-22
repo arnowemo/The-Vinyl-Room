@@ -1,6 +1,7 @@
 package com.thevinylroom
 
 import android.os.Bundle
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -22,6 +23,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
+import androidx.compose.ui.platform.LocalContext
 import kotlin.math.abs
 
 private val amber = Color(0xFFFFB66D)
@@ -52,10 +54,17 @@ class MainActivity : ComponentActivity() {
 private fun VinylRoomApp() {
     var selected by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(false) }
-    var liked by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("vinyl_room", Context.MODE_PRIVATE) }
+    var likedAlbums by remember { mutableStateOf(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet()) }
     var activeTab by remember { mutableStateOf("Albums") }
     var activeNav by remember { mutableStateOf("Ma bibliothèque") }
+    var showAlbumDetails by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var immersive by remember { mutableStateOf(false) }
     val album = albums[selected]
+    val liked = album.artist in likedAlbums
 
     MaterialTheme {
         Box(Modifier.fillMaxSize().background(roomDark)) {
@@ -152,9 +161,12 @@ private fun VinylRoomApp() {
                 }
 
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.Center) {
-                    IconButton(onClick = { liked = !liked }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, tint = if (liked) amber else cream) }
-                    IconButton(onClick = { }) { Icon(Icons.Default.AddBox, null, tint = cream) }
-                    IconButton(onClick = { }) { Icon(Icons.Default.MoreHoriz, null, tint = cream) }
+                    IconButton(onClick = {
+                        likedAlbums = if (liked) likedAlbums - album.artist else likedAlbums + album.artist
+                        prefs.edit().putStringSet("favorites", likedAlbums).apply()
+                    }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, tint = if (liked) amber else cream) }
+                    IconButton(onClick = { showAlbumDetails = true }) { Icon(Icons.Default.AddBox, null, tint = cream) }
+                    IconButton(onClick = { immersive = true }) { Icon(Icons.Default.OpenInFull, null, tint = cream) }
                 }
 
                 Spacer(Modifier.weight(.12f))
@@ -198,15 +210,119 @@ private fun VinylRoomApp() {
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     listOf(Icons.Default.Home to "Accueil", Icons.Default.LibraryMusic to "Ma bibliothèque", Icons.Default.Search to "Rechercher", Icons.Default.FavoriteBorder to "Favoris", Icons.Default.Tune to "Paramètres").forEach { (icon, label) ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { activeNav = label }) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable {
+                            activeNav = label
+                            if (label == "Rechercher") showSearch = true
+                            if (label == "Favoris") {
+                                val firstFavorite = albums.indexOfFirst { it.artist in likedAlbums }
+                                if (firstFavorite >= 0) selected = firstFavorite
+                            }
+                        }) {
                             Icon(icon, null, tint = if (activeNav == label) amber else muted, modifier = Modifier.size(22.dp))
                             Text(label, color = if (activeNav == label) cream else muted, fontSize = 9.sp, maxLines = 1)
                         }
                     }
                 }
             }
+            if (showAlbumDetails) {
+                AlbumDetailsDialog(album = album, onDismiss = { showAlbumDetails = false })
+            }
+            if (showSearch) {
+                SearchDialog(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    onSelect = { index -> selected = index; showSearch = false; activeNav = "Ma bibliothèque" },
+                    onDismiss = { showSearch = false }
+                )
+            }
+            if (immersive) {
+                ImmersiveDialog(album = album, playing = playing, onTogglePlay = { playing = !playing }, onDismiss = { immersive = false })
+            }
         }
     }
+}
+
+@Composable
+private fun AlbumDetailsDialog(album: Album, onDismiss: () -> Unit) {
+    val tracks = if (album.artist == "Explosions in the Sky") listOf(
+        "First Breath After Coma", "The Only Moment We Were Alone",
+        "Six Days at the Bottom of the Ocean", "Memorial", "Your Hand in Mine"
+    ) else emptyList()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF21130D),
+        titleContentColor = cream,
+        textContentColor = muted,
+        title = { Text(album.title, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(album.artist, color = amber, fontWeight = FontWeight.SemiBold)
+                Text(if (tracks.isNotEmpty()) "Titres de l'album" else "Informations de l'album")
+                if (tracks.isNotEmpty()) {
+                    tracks.forEachIndexed { index, track ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text((index + 1).toString().padStart(2, '0'), color = amber, modifier = Modifier.width(30.dp))
+                            Text(track, color = cream, fontSize = 13.sp)
+                        }
+                    }
+                } else {
+                    Text("La liste des titres sera disponible lorsque les données de cet album seront ajoutées.")
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer", color = amber) } }
+    )
+}
+
+@Composable
+private fun SearchDialog(query: String, onQueryChange: (String) -> Unit, onSelect: (Int) -> Unit, onDismiss: () -> Unit) {
+    val results = albums.mapIndexedNotNull { index, album ->
+        if (query.isBlank() || album.artist.contains(query, true) || album.title.contains(query, true)) index else null
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF21130D),
+        titleContentColor = cream,
+        title = { Text("Rechercher dans la bibliothèque") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = query, onValueChange = onQueryChange, singleLine = true, label = { Text("Artiste ou album") })
+                results.forEach { index ->
+                    TextButton(onClick = { onSelect(index) }) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(albums[index].artist, color = cream)
+                            Text(albums[index].title, color = muted, fontSize = 12.sp)
+                        }
+                    }
+                }
+                if (results.isEmpty()) Text("Aucun résultat", color = muted)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer", color = amber) } }
+    )
+}
+
+@Composable
+private fun ImmersiveDialog(album: Album, playing: Boolean, onTogglePlay: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF100804),
+        titleContentColor = cream,
+        textContentColor = cream,
+        title = { Text("Écoute immersive") },
+        text = {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                AlbumSleeve(album, true, Modifier.fillMaxWidth().aspectRatio(1f))
+                Text(album.artist, color = cream, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                Text(album.title, color = muted, textAlign = TextAlign.Center)
+                IconButton(onClick = onTogglePlay, modifier = Modifier.size(64.dp).background(amber, CircleShape)) {
+                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = roomDark, modifier = Modifier.size(34.dp))
+                }
+                Text("Mode visuel immersif · lecture audio à connecter", color = muted, fontSize = 10.sp, textAlign = TextAlign.Center)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Terminer", color = amber) } }
+    )
 }
 
 @Composable
