@@ -5,8 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -15,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -81,27 +80,49 @@ private fun VinylRoomApp() {
                     Text("Ma bibliothèque", color = cream, fontSize = 27.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(5.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("218 albums   ·   ", color = muted, fontSize = 12.sp)
+                        Text("Ta collection   ·   ", color = muted, fontSize = 12.sp)
                         Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF1DB954)))
                         Text("  Connecté à Spotify", color = muted, fontSize = 12.sp)
                     }
                 }
 
                 Spacer(Modifier.height(28.dp))
-                LazyRow(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(horizontal = 38.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    itemsIndexed(albums) { index, item ->
-                        val active = selected == index
-                        AlbumCover(item, active, Modifier
-                            .width(if (active) 226.dp else 174.dp)
-                            .height(if (active) 270.dp else 220.dp)
-                            .clickable { selected = index })
+                // Three sleeves stay in view: the selected record is forward,
+                // while its neighbours tilt away like records on the reference shelf.
+                BoxWithConstraints(Modifier.fillMaxWidth().height(292.dp), contentAlignment = Alignment.Center) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 5.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val leftIndex = (selected - 1 + albums.size) % albums.size
+                        val rightIndex = (selected + 1) % albums.size
+                        AlbumCover(
+                            albums[leftIndex], false,
+                            Modifier.width(62.dp).height(214.dp)
+                                .graphicsLayer { rotationY = 25f; cameraDistance = 12f * density; alpha = .78f }
+                                .clickable { selected = leftIndex }
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        AlbumCover(
+                            album, true,
+                            Modifier.width((maxWidth - 144.dp).coerceAtLeast(190.dp)).height(270.dp)
+                                .graphicsLayer { shadowElevation = 24.dp.toPx() }
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        AlbumCover(
+                            albums[rightIndex], false,
+                            Modifier.width(62.dp).height(214.dp)
+                                .graphicsLayer { rotationY = -25f; cameraDistance = 12f * density; alpha = .78f }
+                                .clickable { selected = rightIndex }
+                        )
                     }
                 }
+                Box(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(13.dp)
+                        .shadow(12.dp, RoundedCornerShape(3.dp))
+                        .background(Brush.verticalGradient(listOf(Color(0xFF9A6037), Color(0xFF3B2114))))
+                )
 
                 Spacer(Modifier.height(18.dp))
                 Row(
@@ -132,8 +153,8 @@ private fun VinylRoomApp() {
                 Spacer(Modifier.weight(1f))
                 Column(Modifier.fillMaxWidth().padding(horizontal = 25.dp, vertical = 12.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("2:41", color = muted, fontSize = 11.sp)
-                        Text("8:17", color = muted, fontSize = 11.sp)
+                        Text("—:—", color = muted, fontSize = 11.sp)
+                        Text("—:—", color = muted, fontSize = 11.sp)
                     }
                     Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(Color(0xFF70503B))) {
                         Box(Modifier.fillMaxWidth(.34f).fillMaxHeight().background(amber))
