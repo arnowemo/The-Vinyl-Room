@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -41,7 +43,7 @@ val decodeRoomBackground by tasks.registering {
     doLast {
         val target = outputFile.asFile
         target.parentFile.mkdirs()
-        target.writeBytes(java.util.Base64.getDecoder().decode(encodedFile.asFile.readText().trim()))
+        target.writeBytes(Base64.getDecoder().decode(encodedFile.asFile.readText().trim()))
         val coverTarget = coverOutputFile.asFile
         coverTarget.parentFile.mkdirs()
         coverTarget.writeBytes(java.util.Base64.getDecoder().decode(coverEncodedFile.asFile.readText().trim()))
