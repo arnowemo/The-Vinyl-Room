@@ -72,10 +72,10 @@ private fun VinylRoomApp() {
     var immersive by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
     var localTracks by remember {
-        mutableStateOf(prefs.getStringSet("local_tracks", emptySet())?.map { raw ->
+        mutableStateOf<List<LocalTrack>>(prefs.getStringSet("local_tracks", emptySet<String>())?.map { raw ->
             val parts = raw.split("|", limit = 2)
             LocalTrack(parts[0], parts.getOrElse(1) { "Titre audio" })
-        } ?: emptyList())
+        } ?: emptyList<LocalTrack>())
     }
     var currentTrackIndex by remember { mutableIntStateOf(-1) }
     var currentTrackName by remember { mutableStateOf("") }
