@@ -465,61 +465,74 @@ private fun decryptSecret(context: Context, value: String?): String {
 
 private fun bandcampFetchAlbums(username: String, password: String): Result<List<BandcampAlbum>> = runCatching {
     require(username.isNotBlank() && password.isNotBlank()) { "Renseigne ton identifiant et ton mot de passe Subsonic." }
-    val saltBytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
-    val salt = saltBytes.joinToString("") { "%02x".format(it) }
-    val digest = MessageDigest.getInstance("MD5").digest((password + salt).toByteArray(Charsets.UTF_8))
-    val token = digest.joinToString("") { "%02x".format(it) }
-    val endpoint = Uri.parse("https://bandcamp.com/api/subsonic/rest/getAlbumList2.view").buildUpon()
-        .appendQueryParameter("u", username)
-        .appendQueryParameter("t", token)
-        .appendQueryParameter("s", salt)
-        .appendQueryParameter("v", "1.16.1")
-        .appendQueryParameter("c", "TheVinylRoom")
-        .appendQueryParameter("f", "xml")
-        .appendQueryParameter("type", "alphabeticalByName")
-        .appendQueryParameter("size", "500")
-        .appendQueryParameter("offset", "0")
-        .build().toString()
-    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-        requestMethod = "GET"
-        connectTimeout = 15000
-        readTimeout = 20000
-        setRequestProperty("Accept", "application/xml, text/xml")
-    }
-    try {
-        val statusCode = connection.responseCode
-        val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
-        if (statusCode !in 200..299) {
-            val details = stream?.bufferedReader()?.use { it.readText() }?.take(350)?.replace(Regex("<[^>]*>"), " ")?.trim().orEmpty()
-            throw IllegalStateException("Bandcamp HTTP $statusCode" + if (details.isNotBlank()) " · $details" else " · Le serveur Bandcamp a refusé la requête.")
+
+    fun request(method: String, extra: Map<String, String> = emptyMap()): String {
+        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02x".format(it) }
+        val token = MessageDigest.getInstance("MD5")
+            .digest((password + salt).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val builder = Uri.parse("https://bandcamp.com/api/subsonic/rest/$method.view").buildUpon()
+            .appendQueryParameter("u", username)
+            .appendQueryParameter("t", token)
+            .appendQueryParameter("s", salt)
+            .appendQueryParameter("v", "1.16.1")
+            .appendQueryParameter("c", "TheVinylRoom")
+            .appendQueryParameter("f", "xml")
+        extra.forEach { (key, value) -> builder.appendQueryParameter(key, value) }
+        val connection = (URL(builder.build().toString()).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15000
+            readTimeout = 20000
+            setRequestProperty("Accept", "application/xml, text/xml")
         }
+        try {
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                val detail = body.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(260)
+                throw IllegalStateException("Bandcamp HTTP $code" + if (detail.isNotBlank()) " · $detail" else " · Réponse serveur vide.")
+            }
+            body
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    fun parseResponse(xml: String, onAlbum: ((XmlPullParser) -> Unit)? = null): String {
         val parser = Xml.newPullParser()
-        parser.setInput(stream, "UTF-8")
+        parser.setInput(xml.reader())
         var event = parser.eventType
         var responseStatus = ""
-        val found = mutableListOf<BandcampAlbum>()
         while (event != XmlPullParser.END_DOCUMENT) {
             if (event == XmlPullParser.START_TAG) {
                 when (parser.name) {
                     "subsonic-response" -> responseStatus = parser.getAttributeValue(null, "status") ?: ""
-                    "error" -> throw IllegalStateException(parser.getAttributeValue(null, "message") ?: "Identifiants Bandcamp refusés")
-                    "album" -> {
-                        val id = parser.getAttributeValue(null, "id") ?: ""
-                        val title = parser.getAttributeValue(null, "name") ?: parser.getAttributeValue(null, "album") ?: "Album sans titre"
-                        val artist = parser.getAttributeValue(null, "artist") ?: "Artiste inconnu"
-                        val art = parser.getAttributeValue(null, "coverArt") ?: ""
-                        val count = parser.getAttributeValue(null, "songCount")?.toIntOrNull() ?: 0
-                        if (id.isNotBlank()) found.add(BandcampAlbum(id, title, artist, art, count))
-                    }
+                    "error" -> throw IllegalStateException(parser.getAttributeValue(null, "message") ?: "Erreur renvoyée par Bandcamp.")
+                    "album" -> onAlbum?.invoke(parser)
                 }
             }
             event = parser.next()
         }
-        if (responseStatus != "ok") throw IllegalStateException("Bandcamp n'a pas confirmé la connexion.")
-        found
-    } finally {
-        connection.disconnect()
+        if (responseStatus != "ok") throw IllegalStateException("Réponse Subsonic inattendue (statut : ${responseStatus.ifBlank { "absent" }}).")
+        responseStatus
     }
+
+    // Vérifie d'abord les identifiants et la disponibilité de l'API avant de demander la collection.
+    parseResponse(request("ping"))
+    val found = mutableListOf<BandcampAlbum>()
+    val response = request("getAlbumList2", mapOf("type" to "newest", "size" to "500", "offset" to "0"))
+    parseResponse(response) { parser ->
+        val id = parser.getAttributeValue(null, "id") ?: ""
+        val title = parser.getAttributeValue(null, "name")
+            ?: parser.getAttributeValue(null, "album") ?: "Album sans titre"
+        val artist = parser.getAttributeValue(null, "artist") ?: "Artiste inconnu"
+        val art = parser.getAttributeValue(null, "coverArt") ?: ""
+        val count = parser.getAttributeValue(null, "songCount")?.toIntOrNull() ?: 0
+        if (id.isNotBlank()) found.add(BandcampAlbum(id, title, artist, art, count))
+    }
+    found
 }
 
 @Composable
