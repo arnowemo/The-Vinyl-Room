@@ -59,7 +59,7 @@ private val muted = Color(0xFFC5A58B)
 private val roomDark = Color(0xFF160B07)
 
 private data class Album(val artist: String, val title: String, val colors: List<Color>, val mark: String)
-private data class LocalTrack(val uri: String, val name: String)
+private data class LocalTrack(val uri: String, val name: String, val artist: String = "", val album: String = "", val durationSeconds: Int = 0)
 private data class BandcampAlbum(val id: String, val title: String, val artist: String, val coverArt: String, val songCount: Int)
 private data class BandcampSong(val id: String, val title: String, val artist: String, val album: String, val coverArt: String, val duration: Int)
 private val albums = listOf(
@@ -160,8 +160,9 @@ private fun VinylRoomApp() {
         currentTrackName = localTracks[index].name
         trackPosition = 0L
         trackDuration = 0L
-        trackArtist = ""
-        trackAlbum = ""
+        trackArtist = localTracks[index].artist
+        trackAlbum = localTracks[index].album
+        trackDuration = localTracks[index].durationSeconds * 1000L
         embeddedArtwork = null
         playing = false
         runCatching {
@@ -179,13 +180,13 @@ private fun VinylRoomApp() {
                     }
                 } finally { metadata.release() }
             } else {
-                trackArtist = "Bandcamp"
-                trackAlbum = "Streaming depuis ta collection"
+                trackArtist = localTracks[index].artist.ifBlank { "Bandcamp" }
+                trackAlbum = localTracks[index].album
             }
             val next = MediaPlayer()
             player = next
             next.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            if (localTracks[index].uri.startsWith("https://")) next.setDataSource(context, Uri.parse(localTracks[index].uri), mapOf("User-Agent" to "TheVinylRoom/1.0", "Accept" to "*/*"))
+            if (localTracks[index].uri.startsWith("https://")) next.setDataSource(localTracks[index].uri)
             else next.setDataSource(context, Uri.parse(localTracks[index].uri))
             next.setOnPreparedListener { media ->
                 playerPrepared = true
