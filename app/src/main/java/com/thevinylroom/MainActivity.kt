@@ -208,7 +208,14 @@ private fun RoomBackdrop(modifier: Modifier = Modifier) {
 @Composable
 private fun AlbumSleeve(album: Album, active: Boolean, modifier: Modifier = Modifier) {
     Box(modifier.clip(RoundedCornerShape(5.dp)).background(Brush.linearGradient(album.colors))) {
-        if (active) {
+        if (active && album.artist == "Explosions in the Sky") {
+            Image(
+                painter = painterResource(id = R.drawable.cover_eits),
+                contentDescription = "Pochette de The Earth Is Not a Cold Dead Place",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else if (active) {
             Canvas(Modifier.fillMaxSize()) {
                 for(i in 0..35) {
                     val x=size.width*(i%6)/6f
