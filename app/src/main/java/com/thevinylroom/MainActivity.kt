@@ -501,15 +501,15 @@ private fun ImmersiveDialog(album: Album, artwork: ImageBitmap?, playing: Boolea
         title = { Text("Écoute immersive") },
         text = {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (embeddedArtwork != null) {
-                    Image(embeddedArtwork!!, contentDescription = "Pochette intégrée au fichier audio", modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                if (artwork != null) {
+                    Image(artwork!!, contentDescription = "Pochette intégrée au fichier audio", modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
                 } else AlbumSleeve(album, true, Modifier.fillMaxWidth().aspectRatio(1f))
                 Text(album.artist, color = cream, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                 Text(album.title, color = muted, textAlign = TextAlign.Center)
                 IconButton(onClick = onTogglePlay, modifier = Modifier.size(64.dp).background(amber, CircleShape)) {
                     Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = roomDark, modifier = Modifier.size(34.dp))
                 }
-                Text("Mode visuel immersif · lecture audio à connecter", color = muted, fontSize = 10.sp, textAlign = TextAlign.Center)
+                Text("Mode écoute immersive", color = muted, fontSize = 10.sp, textAlign = TextAlign.Center)
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Terminer", color = amber) } }
