@@ -296,7 +296,26 @@ private fun VinylRoomApp() {
                         val right = (safeSelected + 1) % libraryAlbums.size
                         AlbumSleeve(libraryAlbums[left], false, Modifier.width(sideW).heightIn(min = 130.dp, max = 185.dp).graphicsLayer { rotationY = 22f; alpha = .88f } .clickable { selected = left })
                         Spacer(Modifier.width(5.dp))
-                        AlbumSleeve(album, true, Modifier.width(centerW).aspectRatio(1f).shadow(22.dp, RoundedCornerShape(5.dp)).clickable { if (activeBandcampAlbum != null) { selectedBandcampAlbum = activeBandcampAlbum; showBandcamp = true; bandcampDetailBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { bandcampFetchAlbumSongs(bandcampUsername, bandcampPassword, activeBandcampAlbum.id) }; bandcampDetailBusy = false; if (result.isSuccess) bandcampSongs = result.getOrThrow() else bandcampDetailError = result.exceptionOrNull()?.message ?: "Impossible de charger cet album." } } else showAlbumDetails = true , bandcampArtwork[activeBandcampAlbum?.id])
+                        AlbumSleeve(
+                            album,
+                            true,
+                            Modifier.width(centerW).aspectRatio(1f).shadow(22.dp, RoundedCornerShape(5.dp)).clickable {
+                                if (activeBandcampAlbum != null) {
+                                    selectedBandcampAlbum = activeBandcampAlbum
+                                    showBandcamp = true
+                                    bandcampDetailBusy = true
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) {
+                                            bandcampFetchAlbumSongs(bandcampUsername, bandcampPassword, activeBandcampAlbum.id)
+                                        }
+                                        bandcampDetailBusy = false
+                                        if (result.isSuccess) bandcampSongs = result.getOrThrow()
+                                        else bandcampDetailError = result.exceptionOrNull()?.message ?: "Impossible de charger cet album."
+                                    }
+                                } else showAlbumDetails = true
+                            },
+                            bandcampArtwork[activeBandcampAlbum?.id]
+                        )
                         Spacer(Modifier.width(5.dp))
                         AlbumSleeve(libraryAlbums[right], false, Modifier.width(sideW).heightIn(min = 130.dp, max = 185.dp).graphicsLayer { rotationY = -22f; alpha = .88f }.clickable { selected = right }, bandcampArtwork[bandcampAlbums.getOrNull(right)?.id])
                     }
