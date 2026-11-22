@@ -31,3 +31,18 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+val decodeRoomBackground by tasks.registering {
+    val encodedFile = layout.projectDirectory.file("src/main/assets/room_background.jpg.b64")
+    val outputFile = layout.projectDirectory.file("src/main/res/drawable-nodpi/room_background.jpg")
+    outputs.file(outputFile)
+    doLast {
+        val target = outputFile.asFile
+        target.parentFile.mkdirs()
+        target.writeBytes(java.util.Base64.getDecoder().decode(encodedFile.asFile.readText().trim()))
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(decodeRoomBackground)
+}
