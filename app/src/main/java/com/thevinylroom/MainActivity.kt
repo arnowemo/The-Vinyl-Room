@@ -2,8 +2,14 @@ package com.thevinylroom
 
 import android.os.Bundle
 import android.content.Context
+import android.media.MediaPlayer
+import android.media.AudioAttributes
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -32,6 +38,7 @@ private val muted = Color(0xFFC5A58B)
 private val roomDark = Color(0xFF160B07)
 
 private data class Album(val artist: String, val title: String, val colors: List<Color>, val mark: String)
+private data class LocalTrack(val uri: String, val name: String)
 private val albums = listOf(
     Album("Explosions in the Sky", "The Earth Is Not a Cold Dead Place", listOf(Color(0xFF152A42), Color(0xFFDB8A56), Color(0xFF080D16)), "✳"),
     Album("Alcest", "Écailles de lune", listOf(Color(0xFF101B31), Color(0xFFB8C5D5), Color(0xFF283C58)), "☾"),
@@ -63,7 +70,57 @@ private fun VinylRoomApp() {
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var immersive by remember { mutableStateOf(false) }
+    var showQueue by remember { mutableStateOf(false) }
+    var localTracks by remember {
+        mutableStateOf(prefs.getStringSet("local_tracks", emptySet())?.map { raw ->
+            val parts = raw.split("|", limit = 2)
+            LocalTrack(parts[0], parts.getOrElse(1) { "Titre audio" })
+        } ?: emptyList())
+    }
+    var currentTrackIndex by remember { mutableIntStateOf(-1) }
+    var currentTrackName by remember { mutableStateOf("") }
+    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) {
+            val added = uris.map { uri ->
+                runCatching { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                val name = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
+                } ?: "Titre audio"
+                LocalTrack(uri.toString(), name)
+            }
+            localTracks = (localTracks + added).distinctBy { it.uri }
+            prefs.edit().putStringSet("local_tracks", localTracks.map { it.uri + "|" + it.name }.toSet()).apply()
+            showQueue = true
+        }
+    }
     val album = albums[selected]
+
+    fun startLocalTrack(index: Int) {
+        if (index !in localTracks.indices) return
+        runCatching { player?.release() }
+        player = null
+        currentTrackIndex = index
+        currentTrackName = localTracks[index].name
+        playing = false
+        runCatching {
+            val next = MediaPlayer()
+            player = next
+            next.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            next.setDataSource(context, Uri.parse(localTracks[index].uri))
+            next.setOnPreparedListener { media ->
+                media.start()
+                playing = true
+            }
+            next.setOnCompletionListener { playing = false }
+            next.setOnErrorListener { _, _, _ -> playing = false; true }
+            next.prepareAsync()
+        }.onFailure {
+            playing = false
+            currentTrackName = "Impossible de lire ce fichier"
+        }
+    }
     val liked = album.artist in likedAlbums
 
     MaterialTheme {
@@ -87,6 +144,8 @@ private fun VinylRoomApp() {
                         Text("THE VINYL ROOM", color = cream, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.3.sp)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.LibraryAdd, null, tint = cream, modifier = Modifier.size(24.dp).clickable { audioPicker.launch(arrayOf("audio/*")) })
+                        Spacer(Modifier.width(14.dp))
                         Icon(Icons.Default.NotificationsNone, null, tint = cream, modifier = Modifier.size(25.dp))
                         Spacer(Modifier.width(17.dp))
                         Box(Modifier.size(34.dp).clip(CircleShape).background(Brush.radialGradient(listOf(Color(0xFFAA795E), Color(0xFF171016)))).border(1.dp, amber, CircleShape), contentAlignment = Alignment.Center) {
@@ -154,8 +213,8 @@ private fun VinylRoomApp() {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     IconButton(onClick = { selected = (selected - 1 + albums.size) % albums.size }) { Icon(Icons.Default.ChevronLeft, null, tint = amber, modifier = Modifier.size(30.dp)) }
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(album.artist, color = cream, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1)
-                        Text(album.title, color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
+                        Text(if (currentTrackIndex >= 0) currentTrackName else album.artist, color = cream, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1)
+                        Text(if (currentTrackIndex >= 0) "Fichier local · lecture sur l'appareil" else album.title, color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 2)
                     }
                     IconButton(onClick = { selected = (selected + 1) % albums.size }) { Icon(Icons.Default.ChevronRight, null, tint = amber, modifier = Modifier.size(30.dp)) }
                 }
@@ -165,7 +224,7 @@ private fun VinylRoomApp() {
                         likedAlbums = if (liked) likedAlbums - album.artist else likedAlbums + album.artist
                         prefs.edit().putStringSet("favorites", likedAlbums).apply()
                     }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, tint = if (liked) amber else cream) }
-                    IconButton(onClick = { showAlbumDetails = true }) { Icon(Icons.Default.AddBox, null, tint = cream) }
+                    IconButton(onClick = { showQueue = true }) { Icon(Icons.Default.AddBox, null, tint = cream) }
                     IconButton(onClick = { immersive = true }) { Icon(Icons.Default.OpenInFull, null, tint = cream) }
                 }
 
@@ -181,7 +240,7 @@ private fun VinylRoomApp() {
                     Spacer(Modifier.height(13.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Shuffle, null, tint = muted)
-                        Icon(Icons.Default.SkipPrevious, null, tint = cream, modifier = Modifier.size(29.dp))
+                        Icon(Icons.Default.SkipPrevious, null, tint = cream, modifier = Modifier.size(29.dp).clickable { if (localTracks.isNotEmpty()) startLocalTrack((currentTrackIndex - 1).let { if (it < 0) localTracks.lastIndex else it }) })
                         val pulse = rememberInfiniteTransition(label = "playGlow")
                         val glow by pulse.animateFloat(
                             initialValue = 0.82f, targetValue = 1.08f,
@@ -192,12 +251,18 @@ private fun VinylRoomApp() {
                             Modifier.size(68.dp).graphicsLayer { scaleX = if (playing) glow else 1f; scaleY = if (playing) glow else 1f }
                                 .shadow(if (playing) 24.dp else 8.dp, CircleShape)
                                 .clip(CircleShape).background(Brush.verticalGradient(listOf(Color(0xFFFFD49D), amber)))
-                                .clickable { playing = !playing },
+                                .clickable {
+                                    if (player != null) {
+                                        if (player?.isPlaying == true) { player?.pause(); playing = false }
+                                        else { player?.start(); playing = true }
+                                    } else if (localTracks.isNotEmpty()) startLocalTrack(if (currentTrackIndex >= 0) currentTrackIndex else 0)
+                                    else showQueue = true
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Color(0xFF21130D), modifier = Modifier.size(35.dp))
                         }
-                        Icon(Icons.Default.SkipNext, null, tint = cream, modifier = Modifier.size(29.dp))
+                        Icon(Icons.Default.SkipNext, null, tint = cream, modifier = Modifier.size(29.dp).clickable { if (localTracks.isNotEmpty()) startLocalTrack((currentTrackIndex + 1).let { if (it > localTracks.lastIndex) 0 else it }) })
                         Icon(Icons.Default.Repeat, null, tint = muted)
                     }
                 }
@@ -227,6 +292,20 @@ private fun VinylRoomApp() {
             if (showAlbumDetails) {
                 AlbumDetailsDialog(album = album, onDismiss = { showAlbumDetails = false })
             }
+            if (showQueue) {
+                LocalLibraryDialog(
+                    tracks = localTracks,
+                    currentIndex = currentTrackIndex,
+                    onAdd = { audioPicker.launch(arrayOf("audio/*")) },
+                    onPlay = { index -> startLocalTrack(index); showQueue = false },
+                    onRemove = { index ->
+                        localTracks = localTracks.filterIndexed { i, _ -> i != index }
+                        prefs.edit().putStringSet("local_tracks", localTracks.map { it.uri + "|" + it.name }.toSet()).apply()
+                        if (currentTrackIndex == index) { player?.release(); player = null; currentTrackIndex = -1; playing = false }
+                    },
+                    onDismiss = { showQueue = false }
+                )
+            }
             if (showSearch) {
                 SearchDialog(
                     query = searchQuery,
@@ -236,10 +315,58 @@ private fun VinylRoomApp() {
                 )
             }
             if (immersive) {
-                ImmersiveDialog(album = album, playing = playing, onTogglePlay = { playing = !playing }, onDismiss = { immersive = false })
+                ImmersiveDialog(album = album, playing = playing, onTogglePlay = {
+                    if (player?.isPlaying == true) { player?.pause(); playing = false }
+                    else if (player != null) { player?.start(); playing = true }
+                    else if (localTracks.isNotEmpty()) startLocalTrack(0) else showQueue = true
+                }, onDismiss = { immersive = false })
             }
         }
     }
+}
+
+@Composable
+private fun LocalLibraryDialog(
+    tracks: List<LocalTrack>,
+    currentIndex: Int,
+    onAdd: () -> Unit,
+    onPlay: (Int) -> Unit,
+    onRemove: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF21130D),
+        titleContentColor = cream,
+        textContentColor = muted,
+        title = { Text("Ma musique", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Importe les fichiers audio stockés sur ton téléphone. Ils restent sur ton appareil.", fontSize = 12.sp)
+                if (tracks.isEmpty()) {
+                    Text("Aucun titre importé pour le moment.", color = cream)
+                } else {
+                    tracks.forEachIndexed { index, track ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { onPlay(index) }) {
+                                Icon(if (index == currentIndex) Icons.Default.GraphicEq else Icons.Default.PlayArrow, null, tint = amber)
+                            }
+                            Text(track.name, color = cream, fontSize = 12.sp, modifier = Modifier.weight(1f), maxLines = 2)
+                            IconButton(onClick = { onRemove(index) }) {
+                                Icon(Icons.Default.Close, null, tint = muted)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(onClick = onAdd) { Text("Importer", color = amber) }
+                TextButton(onClick = onDismiss) { Text("Fermer", color = cream) }
+            }
+        }
+    )
 }
 
 @Composable
