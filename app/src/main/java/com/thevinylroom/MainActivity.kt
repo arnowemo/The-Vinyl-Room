@@ -186,7 +186,7 @@ private fun VinylRoomApp() {
             val next = MediaPlayer()
             player = next
             next.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            if (localTracks[index].uri.startsWith("https://")) next.setDataSource(localTracks[index].uri)
+            if (localTracks[index].uri.startsWith("https://")) next.setDataSource(context, Uri.parse(localTracks[index].uri), mapOf("User-Agent" to "TheVinylRoom/1.0", "Accept" to "audio/mpeg, audio/*, */*"))
             else next.setDataSource(context, Uri.parse(localTracks[index].uri))
             next.setOnPreparedListener { media ->
                 playerPrepared = true
@@ -210,22 +210,10 @@ private fun VinylRoomApp() {
     }
     fun playBandcampSong(song: BandcampSong) {
         playbackError = ""
-        currentTrackName = "Vérification du flux…"
-        scope.launch {
-            val streamUrl = bandcampStreamUrl(bandcampUsername, bandcampPassword, song.id)
-            val probe = withContext(Dispatchers.IO) { bandcampProbeStream(streamUrl) }
-            if (probe.isSuccess) {
-                val track = LocalTrack(streamUrl, song.title, song.artist, song.album, song.duration)
-                localTracks = localTracks.filterNot { it.uri == streamUrl } + track
-                startLocalTrack(localTracks.lastIndex)
-            } else {
-                playing = false
-                currentTrackName = song.title
-                trackArtist = song.artist
-                trackAlbum = song.album
-                playbackError = probe.exceptionOrNull()?.message ?: "Bandcamp n'a pas fourni le flux audio."
-            }
-        }
+        val streamUrl = bandcampStreamUrl(bandcampUsername, bandcampPassword, song.id)
+        val track = LocalTrack(streamUrl, song.title, song.artist, song.album, song.duration)
+        localTracks = localTracks.filterNot { it.uri == streamUrl } + track
+        startLocalTrack(localTracks.lastIndex)
     }
 
     LaunchedEffect(player, playing, playerPrepared) {
@@ -400,8 +388,9 @@ private fun VinylRoomApp() {
                                     if (player != null && playerPrepared) {
                                         if (player?.isPlaying == true) { player?.pause(); playing = false }
                                         else { player?.start(); playing = true }
-                                    } else if (player == null && currentTrackIndex >= 0 && localTracks.isNotEmpty()) startLocalTrack(currentTrackIndex)
-                                    else if (player == null && activeBandcampAlbum != null) {
+                                    } else if (currentTrackIndex >= 0 && localTracks.isNotEmpty()) {
+                                        startLocalTrack(currentTrackIndex)
+                                    } else if (activeBandcampAlbum != null) {
                                         bandcampDetailBusy = true
                                         scope.launch {
                                             val result = withContext(Dispatchers.IO) { bandcampFetchAlbumSongs(bandcampUsername, bandcampPassword, activeBandcampAlbum.id) }
@@ -767,6 +756,7 @@ private fun bandcampStreamUrl(username: String, password: String, songId: String
     val builder = Uri.parse("https://bandcamp.com/api/subsonic/rest/stream.view").buildUpon()
     bandcampAuthParams(username, password).forEach { (key, value) -> builder.appendQueryParameter(key, value) }
     builder.appendQueryParameter("id", songId)
+    builder.appendQueryParameter("format", "mp3")
     builder.appendQueryParameter("estimateContentLength", "true")
     return builder.build().toString()
 }
