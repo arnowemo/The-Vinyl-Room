@@ -16,6 +16,8 @@ import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
@@ -105,9 +107,9 @@ private fun VinylRoomApp() {
                     Text("Ma bibliothèque", color = cream, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("218 albums   ·   ", color = muted, fontSize = 12.sp)
+                        Text("Collection de démonstration   ·   ", color = muted, fontSize = 11.sp)
                         Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF1DB954)))
-                        Text("  Connecté à Spotify", color = cream.copy(alpha = .82f), fontSize = 12.sp)
+                        Text("  Spotify à connecter", color = cream.copy(alpha = .82f), fontSize = 11.sp)
                     }
                 }
 
@@ -195,47 +197,12 @@ private fun VinylRoomApp() {
 
 @Composable
 private fun RoomBackdrop(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val w = size.width; val h = size.height
-        drawRect(Brush.verticalGradient(listOf(Color(0xFF100805), Color(0xFF32190D), Color(0xFF100805))))
-        // Plaster wall and warm pools of light
-        drawCircle(Brush.radialGradient(listOf(Color(0xFF684027).copy(alpha=.48f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(w*.18f,h*.28f), radius=w*.52f), radius=w*.52f, center=androidx.compose.ui.geometry.Offset(w*.18f,h*.28f))
-        drawCircle(Brush.radialGradient(listOf(Color(0xFF4A2A1B).copy(alpha=.38f), Color.Transparent), center = androidx.compose.ui.geometry.Offset(w*.88f,h*.42f), radius=w*.45f), radius=w*.45f, center=androidx.compose.ui.geometry.Offset(w*.88f,h*.42f))
-        // Left wooden record shelves
-        val shelfW = w*.39f
-        drawRect(Color(0xFF1B0E08), androidx.compose.ui.geometry.Offset(0f,h*.13f), androidx.compose.ui.geometry.Size(shelfW,h*.57f))
-        for (row in 0..2) {
-            val y = h*(.25f + row*.15f)
-            drawRect(Brush.verticalGradient(listOf(Color(0xFF8A512B),Color(0xFF32190D))), androidx.compose.ui.geometry.Offset(0f,y), androidx.compose.ui.geometry.Size(shelfW,y*.012f+h*.008f))
-            for (i in 0..17) {
-                val x = i*shelfW/18f + 3f
-                val bw = shelfW/23f
-                val bh = h*(.09f + ((i*7+row*3)%5)*.009f)
-                drawRect(listOf(Color(0xFF4B3024),Color(0xFF80604A),Color(0xFF241D1B),Color(0xFF9A7656))[i%4], androidx.compose.ui.geometry.Offset(x,y-bh), androidx.compose.ui.geometry.Size(bw,bh))
-            }
-        }
-        // Right rain-lit window
-        val wx=w*.79f; val wy=h*.13f; val ww=w*.21f; val wh=h*.43f
-        drawRect(Brush.verticalGradient(listOf(Color(0xFF101A28),Color(0xFF34251F))), androidx.compose.ui.geometry.Offset(wx,wy), androidx.compose.ui.geometry.Size(ww,wh))
-        for (i in 1..3) drawLine(Color(0xFF6B4933), androidx.compose.ui.geometry.Offset(wx+ww*i/4f,wy), androidx.compose.ui.geometry.Offset(wx+ww*i/4f,wy+wh), 3f)
-        drawLine(Color(0xFF6B4933), androidx.compose.ui.geometry.Offset(wx,wy+wh*.48f), androidx.compose.ui.geometry.Offset(w,wy+wh*.48f), 4f)
-        for(i in 0..36) { val x=wx+(i*37%100)/100f*ww; val y=wy+(i*61%100)/100f*wh; drawCircle(Color(0xFFFFA45E).copy(alpha=.15f+(i%4)*.08f), radius=2f+(i%3)*1.5f, center=androidx.compose.ui.geometry.Offset(x,y)) }
-        // Wooden desktop
-        drawRect(Brush.verticalGradient(listOf(Color(0xFF6A3A1D),Color(0xFF241108))), androidx.compose.ui.geometry.Offset(0f,h*.73f), androidx.compose.ui.geometry.Size(w,h*.27f))
-        for(i in 0..10) drawLine(Color(0xFFB16C37).copy(alpha=.16f), androidx.compose.ui.geometry.Offset(0f,h*(.76f+i*.02f)), androidx.compose.ui.geometry.Offset(w,h*(.76f+i*.02f)), 1.5f)
-        // Turntable on the right side of desk
-        drawRoundRect(Brush.verticalGradient(listOf(Color(0xFF9B572B),Color(0xFF29150D))), androidx.compose.ui.geometry.Offset(w*.61f,h*.80f), androidx.compose.ui.geometry.Size(w*.42f,h*.105f), androidx.compose.ui.geometry.CornerRadius(14f))
-        drawCircle(Color(0xFF08090B), radius=w*.105f, center=androidx.compose.ui.geometry.Offset(w*.81f,h*.805f))
-        drawCircle(Color(0xFF34231B), radius=w*.075f, center=androidx.compose.ui.geometry.Offset(w*.81f,h*.805f))
-        drawCircle(amber.copy(alpha=.7f), radius=w*.018f, center=androidx.compose.ui.geometry.Offset(w*.81f,h*.805f))
-        // Salt lamp
-        drawCircle(Color(0xFFFFA344).copy(alpha=.25f), radius=w*.11f, center=androidx.compose.ui.geometry.Offset(w*.68f,h*.75f))
-        drawCircle(Brush.radialGradient(listOf(Color(0xFFFFD58A),Color(0xFFB94D19))), radius=w*.047f, center=androidx.compose.ui.geometry.Offset(w*.68f,h*.75f))
-        // Mug and steam on the left
-        drawRoundRect(Color(0xFFB78B69), androidx.compose.ui.geometry.Offset(w*.07f,h*.80f), androidx.compose.ui.geometry.Size(w*.16f,h*.09f), androidx.compose.ui.geometry.CornerRadius(10f))
-        drawArc(Color(0xFFB78B69), 270f, 180f, false, topLeft=androidx.compose.ui.geometry.Offset(w*.19f,h*.81f), size=androidx.compose.ui.geometry.Size(w*.08f,h*.07f), style=androidx.compose.ui.graphics.drawscope.Stroke(width=5f))
-        for(i in 0..2) drawLine(Color(0xFFFFD4A0).copy(alpha=.18f), androidx.compose.ui.geometry.Offset(w*(.11f+i*.035f),h*.78f), androidx.compose.ui.geometry.Offset(w*(.13f+i*.035f),h*.74f), 2f)
-    }
+    Image(
+        painter = painterResource(id = R.drawable.room_background),
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = ContentScale.Crop
+    )
 }
 
 @Composable
